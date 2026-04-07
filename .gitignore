@@ -1,0 +1,70 @@
+# Go build artifacts
+/imgchk
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/dist/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment and credentials
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials.json
+service-account*.json
+*-credentials.*
+*.tfvars
+
+# SSH
+.ssh/
+
+# Cloud provider credentials
+.aws/
+.config/gcloud/
+.azure/
+
+# Secrets and tokens (not source code)
+*secret*
+*token*
+!src/**
+!tests/**
+!internal/**
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+.fleet/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Logging
+*.log
+
+# Snyk Security Extension
+.github/instructions/snyk_rules.instructions.md
+
+# Test images
+*.tar
