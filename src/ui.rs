@@ -610,41 +610,64 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
 
     let layer = &app.image.layers[app.layer_index];
     let file_count = layer.file_tree.file_count;
-    let command = clean_command(&layer.command);
 
     let label_style = Style::default()
         .fg(Color::Yellow)
         .add_modifier(Modifier::BOLD);
     let value_style = Style::default().fg(Color::White);
+    let dim_style = Style::default().fg(Color::Gray);
 
-    let text = vec![
+    // Compact metadata header
+    let mut lines: Vec<Line> = vec![
         Line::from(vec![
-            Span::styled("Command:  ", label_style),
-            Span::styled(command, value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Digest:   ", label_style),
-            Span::styled(&layer.digest, value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("DiffID:   ", label_style),
-            Span::styled(&layer.diff_id, value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Size:     ", label_style),
+            Span::styled("Size: ", label_style),
             Span::styled(tree::human_size(layer.size), value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Created:  ", label_style),
-            Span::styled(&layer.created, value_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Files:    ", label_style),
+            Span::styled("  Files: ", label_style),
             Span::styled(file_count.to_string(), value_style),
+            Span::styled("  Created: ", label_style),
+            Span::styled(&layer.created, dim_style),
+        ]),
+        Line::from(vec![
+            Span::styled("Digest: ", label_style),
+            Span::styled(&layer.digest, dim_style),
         ]),
     ];
 
-    let paragraph = Paragraph::new(text)
+    if !layer.diff_id.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled("DiffID: ", label_style),
+            Span::styled(&layer.diff_id, dim_style),
+        ]));
+    }
+
+    // Separator
+    lines.push(Line::from(""));
+
+    // Pretty-print the command
+    let command = clean_command(&layer.command);
+    let cmd_lines = format_command(&command);
+    let keyword_style = Style::default()
+        .fg(Color::LightCyan)
+        .add_modifier(Modifier::BOLD);
+    let op_style = Style::default().fg(Color::Yellow);
+
+    for (i, cmd_line) in cmd_lines.iter().enumerate() {
+        let trimmed = cmd_line.trim();
+        if i == 0 {
+            // First line gets the label
+            let spans = highlight_shell_line(trimmed, keyword_style, op_style, value_style);
+            let mut line_spans = vec![Span::styled("$ ", label_style)];
+            line_spans.extend(spans);
+            lines.push(Line::from(line_spans));
+        } else {
+            let spans = highlight_shell_line(trimmed, keyword_style, op_style, value_style);
+            let mut line_spans = vec![Span::raw("  ")];
+            line_spans.extend(spans);
+            lines.push(Line::from(line_spans));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -655,6 +678,136 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
         .wrap(Wrap { trim: false });
 
     f.render_widget(paragraph, area);
+}
+
+fn format_command(cmd: &str) -> Vec<String> {
+    // Split at shell separators, keeping the separator at the start of the next line
+    let mut lines = Vec::new();
+    let mut current = String::new();
+
+    let chars: Vec<char> = cmd.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+
+        if c == ';' {
+            current.push(';');
+            lines.push(current.trim().to_string());
+            current = String::new();
+            i += 1;
+        } else if c == '&' && i + 1 < len && chars[i + 1] == '&' {
+            current.push_str("&&");
+            lines.push(current.trim().to_string());
+            current = String::new();
+            i += 2;
+        } else if c == '|' && i + 1 < len && chars[i + 1] == '|' {
+            current.push_str("||");
+            lines.push(current.trim().to_string());
+            current = String::new();
+            i += 2;
+        } else if c == '|' && (i + 1 >= len || chars[i + 1] != '|') {
+            // Pipe — keep on same line but break after
+            current.push('|');
+            lines.push(current.trim().to_string());
+            current = String::new();
+            i += 1;
+        } else {
+            current.push(c);
+            i += 1;
+        }
+    }
+
+    let remaining = current.trim().to_string();
+    if !remaining.is_empty() {
+        lines.push(remaining);
+    }
+
+    if lines.is_empty() {
+        lines.push(cmd.to_string());
+    }
+
+    lines
+}
+
+fn highlight_shell_line<'a>(
+    line: &'a str,
+    keyword_style: Style,
+    op_style: Style,
+    default_style: Style,
+) -> Vec<Span<'a>> {
+    let mut spans = Vec::new();
+
+    // Highlight shell keywords and operators
+    let first_word = line.split_whitespace().next().unwrap_or("");
+    let is_keyword = matches!(
+        first_word,
+        "RUN"
+            | "CMD"
+            | "COPY"
+            | "ADD"
+            | "ENV"
+            | "WORKDIR"
+            | "EXPOSE"
+            | "FROM"
+            | "ARG"
+            | "LABEL"
+            | "ENTRYPOINT"
+            | "VOLUME"
+            | "USER"
+            | "SHELL"
+            | "STOPSIGNAL"
+            | "HEALTHCHECK"
+            | "ONBUILD"
+    );
+
+    if is_keyword {
+        spans.push(Span::styled(&line[..first_word.len()], keyword_style));
+        let rest = &line[first_word.len()..];
+        spans.extend(highlight_operators(rest, op_style, default_style));
+    } else {
+        spans.extend(highlight_operators(line, op_style, default_style));
+    }
+
+    spans
+}
+
+fn highlight_operators<'a>(text: &'a str, op_style: Style, default_style: Style) -> Vec<Span<'a>> {
+    let mut spans = Vec::new();
+    let mut last = 0;
+
+    let ops = ["&&", "||", "|", ">>", ">&", ">", "<"];
+
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        let mut matched = false;
+        for op in &ops {
+            let op_bytes = op.as_bytes();
+            if i + op_bytes.len() <= len && &bytes[i..i + op_bytes.len()] == op_bytes {
+                if last < i {
+                    spans.push(Span::styled(&text[last..i], default_style));
+                }
+                spans.push(Span::styled(&text[i..i + op_bytes.len()], op_style));
+                i += op_bytes.len();
+                last = i;
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            i += 1;
+        }
+    }
+
+    if last < len {
+        spans.push(Span::styled(&text[last..], default_style));
+    }
+
+    spans
 }
 
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
