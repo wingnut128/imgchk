@@ -1,70 +1,94 @@
 # imgchk
 
-A terminal UI tool for inspecting Docker and OCI container images. Browse layers, explore the filesystem tree, and extract files interactively.
+A terminal UI tool for inspecting Docker and OCI container images. Browse layers, explore the filesystem tree, and extract files in multiple formats.
 
 ## Features
 
-- **Multi-source loading** — load images from tarballs (`docker save`), the local Docker daemon, or remote registries
-- **Layer browser** — navigate all image layers with metadata (size, digest, creation command)
-- **File tree explorer** — browse the filesystem of each layer with expand/collapse navigation
-- **Cumulative view** — toggle between single-layer and cumulative filesystem views with proper whiteout handling
-- **File extraction** — select files with a checkbox picker and extract them to a local directory
-- **Whiteout awareness** — correctly handles `.wh.*` deletions and opaque whiteouts when merging layers
+- **Registry & tarball loading** — pull images from Docker Hub, GHCR, or any OCI registry, or load from `docker save` tarballs
+- **Layer browser** — navigate layers with metadata (size, digest, creation command)
+- **File tree explorer** — browse each layer's filesystem with expand/collapse, selection, and cumulative view
+- **Multiple export formats** — extract as tar.gz, tar, squashfs, or directory via [ocirender](https://crates.io/crates/ocirender)
+- **Whiteout handling** — correctly merges `.wh.*` deletions and opaque whiteouts in cumulative view
+- **Registry auth** — reads credentials from Docker's credential store or environment variables
+- **Blob caching** — downloaded layers are cached locally to avoid redundant pulls
+
+## Requirements
+
+- **Rust 1.85+** (for building)
+- **mksquashfs** (optional, only needed for squashfs export format)
+
+### Installing mksquashfs
+
+**macOS:**
+```bash
+brew install squashfs
+```
+
+**Debian/Ubuntu:**
+```bash
+sudo apt-get install squashfs-tools
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install squashfs-tools
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S squashfs-tools
+```
+
+If `mksquashfs` is not installed, all other export formats (tar.gz, tar, directory) work normally. The squashfs option will show an error in the status bar if the binary is not found.
 
 ## Installation
 
 ```bash
-# From source
-git clone <repo-url>
+git clone https://github.com/wingnut128/imgchk.git
 cd imgchk
-make install
-
-# Or just build locally
-make build
+cargo install --path .
 ```
 
-Requires Go 1.26+.
+Or build locally:
+
+```bash
+make build          # debug build
+make release        # optimized release build
+make hooks          # install pre-commit hook (fmt + clippy)
+```
 
 ## Usage
 
 ```bash
-# Inspect a tarball (from docker save)
-docker save nginx:latest -o nginx.tar
-imgchk nginx.tar
-
-# Inspect from Docker daemon
+# Inspect an image from Docker Hub
 imgchk nginx:latest
 
-# Inspect from remote registry
-imgchk ghcr.io/owner/image:tag
+# Inspect with a specific platform
+imgchk --platform linux/arm64 alpine:3.19
 
-# Extract files to a specific directory
-imgchk -o /tmp/extracted nginx.tar
+# Inspect a local tarball (from docker save)
+imgchk ./myimage.tar
+
+# Set an output directory for extractions
+imgchk -o /tmp/extracted ghcr.io/org/app:v1.2
 ```
-
-### Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-o` | `.` | Output directory for extracted files |
 
 ## TUI Layout
 
 ```
 ┌──────────────┬─────────────────────────┐
 │              │   File Tree             │
-│  Layer List  │   ├── usr/              │
-│              │   │   ├── bin/          │
-│  > Layer 0   │   │   │   └── [x] bash │
-│    Layer 1   │   │   └── lib/          │
-│    Layer 2   │   └── etc/              │
+│  Layer List  │   [✓] ▾ usr/           │
+│              │   [ ]   ▸ bin/         │
+│  ▸ Layer 0   │   [✓]   passwd  1.2 KB │
+│    Layer 1   │   [ ]   shadow   494 B │
+│    Layer 2   │                         │
 │              ├─────────────────────────┤
 │              │   Details               │
-│              │   Command: RUN apt-get… │
-│              │   Digest: sha256:abc…   │
-│              │   Size: 4.2 MB          │
+│              │   Size: 4.2 MB Files: 8 │
+│              │   $ apt-get install ... │
 ├──────────────┴─────────────────────────┤
-│ tab:pane ↑↓:nav space:select e:extract │
+│ nginx:latest │ linux/amd64 │ fmt:tar.gz│
 └────────────────────────────────────────┘
 ```
 
@@ -72,53 +96,46 @@ imgchk -o /tmp/extracted nginx.tar
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` / `j` / `k` | Navigate within the focused pane |
-| `Tab` | Cycle focus between panes |
-| `Enter` | Expand or collapse a directory |
-| `Space` | Toggle file selection (directories select all children) |
+| `j`/`k`, Up/Down | Navigate within focused pane |
+| `Tab` | Cycle focus (Layers -> Files -> Details) |
+| `Enter` | Expand/collapse directory |
+| `Space` | Select/deselect file or directory |
 | `t` | Toggle cumulative vs single-layer view |
-| `e` | Extract selected files to the output directory |
-| `q` / `Ctrl+C` | Quit |
+| `f` | Cycle export format (tar.gz, tar, squashfs, dir) |
+| `o` | Set output directory |
+| `e` | Extract (selected files or current layer) |
+| `a` | Export all layers (merged) |
+| `q` | Quit |
 
-## How It Works
+## Export Formats
 
-1. The image is loaded and each layer's tar stream is parsed into an in-memory file tree
-2. Layer metadata is correlated with the image config history (skipping empty/metadata-only layers)
-3. The TUI displays three panes: layer list, file tree browser, and details panel
-4. In cumulative mode, layers are merged bottom-up with OCI whiteout semantics applied
-5. Extraction uses `mutate.Extract` for the flattened filesystem or reads directly from individual layer tars
+| Format | Key | Description |
+|--------|-----|-------------|
+| **tar.gz** | default | Individual layer tarballs (gzipped) |
+| **tar** | `f` | Merged filesystem as plain tar archive |
+| **squashfs** | `f` | Merged filesystem as squashfs image (requires `mksquashfs`) |
+| **dir** | `f` | Merged filesystem extracted to a directory |
 
-## Project Structure
+Press `f` to cycle formats. The current format is shown in the status bar. Then use `e` (single layer) or `a` (all layers merged) to export.
 
-```
-imgchk/
-├── main.go                        # CLI entry point
-├── internal/
-│   ├── image/
-│   │   ├── loader.go              # Image loading (tarball, daemon, registry)
-│   │   ├── layer.go               # Layer/image metadata and analysis
-│   │   └── filetree.go            # File tree construction and whiteout merging
-│   ├── extract/
-│   │   └── extract.go             # File extraction to disk
-│   └── ui/
-│       ├── app.go                 # Root TUI model and layout
-│       ├── keys.go                # Key bindings
-│       ├── styles.go              # Terminal styling
-│       ├── layerlist.go           # Layer list pane
-│       ├── filetree.go            # File tree browser pane
-│       ├── details.go             # Details pane
-│       └── statusbar.go           # Status bar
-├── Makefile
-├── go.mod
-└── go.sum
-```
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `IMGCHK_REGISTRY_USER` | Registry username |
+| `IMGCHK_REGISTRY_TOKEN` | Registry password or token |
+| `IMGCHK_CACHE_DIR` | Override blob cache directory (default: `~/.cache/imgchk/blobs/`) |
+| `IMGCHK_CACHE_MAX_MB` | Max cache size in MB (default: 10240) |
+
+Authentication is resolved in order: environment variables, Docker credential store (`~/.docker/config.json`), then anonymous.
 
 ## Dependencies
 
-- [go-containerregistry](https://github.com/google/go-containerregistry) — Docker/OCI image handling
-- [bubbletea](https://github.com/charmbracelet/bubbletea) — TUI framework
-- [bubbles](https://github.com/charmbracelet/bubbles) — TUI components
-- [lipgloss](https://github.com/charmbracelet/lipgloss) — Terminal styling and layout
+- [oci-client](https://crates.io/crates/oci-client) — OCI registry client (ORAS/CNCF)
+- [ocirender](https://crates.io/crates/ocirender) — OCI image conversion (squashfs, tar, directory)
+- [ratatui](https://crates.io/crates/ratatui) — TUI framework
+- [clap](https://crates.io/crates/clap) — CLI argument parsing
+- [tokio](https://crates.io/crates/tokio) — async runtime
 
 ## License
 
