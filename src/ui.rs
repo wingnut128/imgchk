@@ -3,7 +3,9 @@ use std::io;
 use std::path::PathBuf;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -40,7 +42,6 @@ struct TreeRow {
     size: u64,
     is_dir: bool,
     expanded: bool,
-    mode: u32,
     link_target: Option<String>,
 }
 
@@ -56,9 +57,12 @@ pub struct App {
     // File tree
     cumulative: bool,
     expanded_dirs: HashSet<String>,
+    cached_tree: FileTree,
     file_rows: Vec<TreeRow>,
     file_index: usize,
     selected_files: HashSet<String>,
+    /// Pre-computed per-directory selection state: (all_selected, some_selected)
+    dir_selection: std::collections::HashMap<String, (bool, bool)>,
 
     // Output
     output_dir: Option<PathBuf>,
@@ -79,9 +83,11 @@ impl App {
             layer_index: 0,
             cumulative: false,
             expanded_dirs: HashSet::new(),
+            cached_tree: FileTree::new(),
             file_rows: Vec::new(),
             file_index: 0,
             selected_files: HashSet::new(),
+            dir_selection: std::collections::HashMap::new(),
             output_dir,
             status: String::new(),
             input_mode: false,
@@ -91,8 +97,8 @@ impl App {
         app
     }
 
-    fn current_tree(&self) -> FileTree {
-        if self.cumulative {
+    fn rebuild_tree(&mut self) {
+        self.cached_tree = if self.cumulative {
             let trees: Vec<FileTree> = self.image.layers[..=self.layer_index]
                 .iter()
                 .map(|l| l.file_tree.clone())
@@ -100,16 +106,40 @@ impl App {
             tree::merge_trees(&trees)
         } else {
             self.image.layers[self.layer_index].file_tree.clone()
-        }
+        };
     }
 
     fn rebuild_file_rows(&mut self) {
-        let tree = self.current_tree();
+        self.rebuild_tree();
         let mut rows = Vec::new();
-        flatten_node(&tree.root, 0, &self.expanded_dirs, &mut rows);
+        flatten_node(&self.cached_tree.root, 0, &self.expanded_dirs, &mut rows);
         self.file_rows = rows;
         if self.file_index >= self.file_rows.len() {
             self.file_index = self.file_rows.len().saturating_sub(1);
+        }
+        self.rebuild_dir_selection();
+    }
+
+    fn rebuild_dir_selection(&mut self) {
+        self.dir_selection.clear();
+        self.compute_dir_selection(&self.cached_tree.root.clone());
+    }
+
+    fn compute_dir_selection(&mut self, node: &FileNode) {
+        for child in node.children.values() {
+            if child.is_dir {
+                let paths = tree::collect_paths(child);
+                if !paths.is_empty() {
+                    let sel = paths
+                        .iter()
+                        .filter(|p| self.selected_files.contains(*p))
+                        .count();
+                    let all = sel == paths.len();
+                    let some = sel > 0 && !all;
+                    self.dir_selection.insert(child.path.clone(), (all, some));
+                }
+                self.compute_dir_selection(child);
+            }
         }
     }
 
@@ -127,12 +157,15 @@ impl App {
     }
 }
 
-fn flatten_node(node: &FileNode, depth: usize, expanded: &HashSet<String>, rows: &mut Vec<TreeRow>) {
+fn flatten_node(
+    node: &FileNode,
+    depth: usize,
+    expanded: &HashSet<String>,
+    rows: &mut Vec<TreeRow>,
+) {
     // Sort: dirs first, then by name
     let mut children: Vec<&FileNode> = node.children.values().collect();
-    children.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
-    });
+    children.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
 
     for child in children {
         let is_expanded = expanded.contains(&child.path);
@@ -143,7 +176,6 @@ fn flatten_node(node: &FileNode, depth: usize, expanded: &HashSet<String>, rows:
             size: child.size,
             is_dir: child.is_dir,
             expanded: is_expanded,
-            mode: child.mode,
             link_target: child.link_target.clone(),
         });
 
@@ -197,6 +229,18 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     _ => {}
                 }
                 continue;
+            }
+
+            // Clear transient status on any navigation
+            match key.code {
+                KeyCode::Char('j' | 'k')
+                | KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Tab
+                | KeyCode::Enter => {
+                    app.status.clear();
+                }
+                _ => {}
             }
 
             match key.code {
@@ -269,11 +313,10 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                         if let Some(row) = app.file_rows.get(app.file_index) {
                             let path = row.path.clone();
                             if row.is_dir {
-                                // Select/deselect all files under this dir
-                                let tree = app.current_tree();
-                                if let Some(node) = find_node(&tree.root, &path) {
+                                if let Some(node) = find_node(&app.cached_tree.root, &path) {
                                     let paths = tree::collect_paths(node);
-                                    let all_selected = paths.iter().all(|p| app.selected_files.contains(p));
+                                    let all_selected =
+                                        paths.iter().all(|p| app.selected_files.contains(p));
                                     if all_selected {
                                         for p in paths {
                                             app.selected_files.remove(&p);
@@ -289,53 +332,68 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                             } else {
                                 app.selected_files.insert(path);
                             }
+                            app.rebuild_dir_selection();
                         }
                     }
                 }
-                KeyCode::Char('e') => {
-                    match app.focus {
-                        Pane::Layers => {
-                            // Export all layers as tar.gz
-                            let dir = app.ensure_output_dir();
-                            match extract::export_all_layers(&app.image.layers, &dir) {
-                                Ok(paths) => {
-                                    app.status = format!(
-                                        "Exported {} layers to {}",
-                                        paths.len(),
-                                        dir.display()
-                                    );
-                                }
-                                Err(e) => {
-                                    app.status = format!("Export error: {}", e);
-                                }
+                KeyCode::Char('a') => {
+                    if app.focus == Pane::Layers {
+                        let dir = app.ensure_output_dir();
+                        match extract::export_all_layers(&app.image.layers, &dir) {
+                            Ok(paths) => {
+                                app.status =
+                                    format!("Exported {} layers to {}", paths.len(), dir.display());
+                            }
+                            Err(e) => {
+                                app.status = format!("Export error: {}", e);
                             }
                         }
-                        Pane::Files => {
-                            if app.selected_files.is_empty() {
-                                app.status = "No files selected (use space to select)".into();
-                            } else {
-                                let dir = app.ensure_output_dir();
-                                let paths: Vec<String> =
-                                    app.selected_files.iter().cloned().collect();
-                                let layer = &app.image.layers[app.layer_index];
-                                match extract::extract_files(layer, &paths, &dir) {
-                                    Ok(count) => {
-                                        app.status = format!(
-                                            "Extracted {} files to {}",
-                                            count,
-                                            dir.display()
-                                        );
-                                        app.selected_files.clear();
-                                    }
-                                    Err(e) => {
-                                        app.status = format!("Extract error: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                        Pane::Details => {}
                     }
                 }
+                KeyCode::Char('e') => match app.focus {
+                    Pane::Layers => {
+                        let dir = app.ensure_output_dir();
+                        let layer = &app.image.layers[app.layer_index];
+                        match extract::export_layer(layer, &dir) {
+                            Ok(path) => {
+                                app.status =
+                                    format!("Exported layer {} to {}", layer.index, path.display());
+                            }
+                            Err(e) => {
+                                app.status = format!("Export error: {}", e);
+                            }
+                        }
+                    }
+                    Pane::Files => {
+                        let dir = app.ensure_output_dir();
+                        let paths: Vec<String> = if app.selected_files.is_empty() {
+                            tree::collect_paths(&app.cached_tree.root)
+                        } else {
+                            app.selected_files.iter().cloned().collect()
+                        };
+                        let label = if app.selected_files.is_empty() {
+                            "all"
+                        } else {
+                            "selected"
+                        };
+                        let layer = &app.image.layers[app.layer_index];
+                        match extract::extract_files(layer, &paths, &dir) {
+                            Ok(count) => {
+                                app.status = format!(
+                                    "Extracted {} {} files to {}",
+                                    count,
+                                    label,
+                                    dir.display()
+                                );
+                                app.selected_files.clear();
+                            }
+                            Err(e) => {
+                                app.status = format!("Extract error: {}", e);
+                            }
+                        }
+                    }
+                    Pane::Details => {}
+                },
                 _ => {}
             }
         }
@@ -359,6 +417,31 @@ fn find_node<'a>(node: &'a FileNode, path: &str) -> Option<&'a FileNode> {
 }
 
 // ── Drawing ─────────────────────────────────────────────────────────────────
+
+const HIGHLIGHT_STYLE: Style = Style::new()
+    .bg(Color::Rgb(50, 50, 80))
+    .fg(Color::White)
+    .add_modifier(Modifier::BOLD);
+
+fn focused_styles(is_focused: bool) -> (Style, Style) {
+    if is_focused {
+        (
+            Style::default()
+                .fg(Color::LightYellow)
+                .add_modifier(Modifier::BOLD),
+            // Inverted title for clear focus indicator
+            Style::default()
+                .bg(Color::LightYellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (
+            Style::default().fg(Color::Gray),
+            Style::default().fg(Color::White),
+        )
+    }
+}
 
 fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -393,31 +476,23 @@ fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|l| {
             let cmd = truncate_command(&l.command, area.width.saturating_sub(20) as usize);
-            let line = format!(
-                " {} │ {:>8} │ {}",
-                l.index,
-                tree::human_size(l.size),
-                cmd
-            );
+            let line = format!(" {} │ {:>8} │ {}", l.index, tree::human_size(l.size), cmd);
             ListItem::new(line)
         })
         .collect();
 
     let title = format!(" Layers ({}) ", app.image.layers.len());
-    let border_style = if app.focus == Pane::Layers {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let (border_style, title_style) = focused_styles(app.focus == Pane::Layers);
 
     let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
+                .title_style(title_style)
                 .title(title),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(HIGHLIGHT_STYLE)
         .highlight_symbol("▸ ");
 
     let mut state = ListState::default();
@@ -426,18 +501,14 @@ fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_files(f: &mut Frame, app: &App, area: Rect) {
-    let view_label = if app.cumulative { "cumulative" } else { "layer" };
-    let title = format!(
-        " Files ({}, {}) ",
-        app.file_rows.len(),
-        view_label
-    );
-
-    let border_style = if app.focus == Pane::Files {
-        Style::default().fg(Color::Cyan)
+    let view_label = if app.cumulative {
+        "cumulative"
     } else {
-        Style::default().fg(Color::DarkGray)
+        "layer"
     };
+    let title = format!(" Files ({}, {}) ", app.file_rows.len(), view_label);
+
+    let (border_style, title_style) = focused_styles(app.focus == Pane::Files);
 
     let items: Vec<ListItem> = app
         .file_rows
@@ -445,15 +516,22 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
         .map(|row| {
             let indent = "  ".repeat(row.depth);
             let icon = if row.is_dir {
-                if row.expanded { "▾ " } else { "▸ " }
+                if row.expanded {
+                    "▾ "
+                } else {
+                    "▸ "
+                }
             } else {
                 "  "
             };
 
-            let selected = if app.selected_files.contains(&row.path) {
-                "✓ "
+            let (is_selected, is_partial) = if row.is_dir {
+                app.dir_selection
+                    .get(&row.path)
+                    .copied()
+                    .unwrap_or((false, false))
             } else {
-                "  "
+                (app.selected_files.contains(&row.path), false)
             };
 
             let suffix = if let Some(ref target) = row.link_target {
@@ -464,17 +542,50 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
                 format!("  {}", tree::human_size(row.size))
             };
 
-            let line = format!("{}{}{}{}{}", selected, indent, icon, row.name, suffix);
-
-            let style = if row.is_dir {
-                Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)
-            } else if row.link_target.is_some() {
-                Style::default().fg(Color::Cyan)
+            let checkbox = if is_selected {
+                Span::styled(
+                    "[✓] ",
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else if is_partial {
+                Span::styled(
+                    "[~] ",
+                    Style::default()
+                        .fg(Color::LightYellow)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
-                Style::default()
+                Span::styled("[ ] ", Style::default().fg(Color::Gray))
             };
 
-            ListItem::new(line).style(style)
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_partial {
+                Style::default()
+                    .fg(Color::LightYellow)
+                    .add_modifier(Modifier::BOLD)
+            } else if row.is_dir {
+                Style::default()
+                    .fg(Color::LightBlue)
+                    .add_modifier(Modifier::BOLD)
+            } else if row.link_target.is_some() {
+                Style::default().fg(Color::LightCyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            let line = Line::from(vec![
+                checkbox,
+                Span::raw(format!("{}{}", indent, icon)),
+                Span::styled(&row.name, name_style),
+                Span::styled(suffix, Style::default().fg(Color::Gray)),
+            ]);
+
+            ListItem::new(line)
         })
         .collect();
 
@@ -483,9 +594,10 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
+                .title_style(title_style)
                 .title(title),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(HIGHLIGHT_STYLE)
         .highlight_symbol("▸ ");
 
     let mut state = ListState::default();
@@ -494,39 +606,41 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_details(f: &mut Frame, app: &App, area: Rect) {
-    let border_style = if app.focus == Pane::Details {
-        Style::default().fg(Color::Cyan)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
+    let (border_style, title_style) = focused_styles(app.focus == Pane::Details);
 
     let layer = &app.image.layers[app.layer_index];
     let file_count = layer.file_tree.file_count;
+    let command = clean_command(&layer.command);
+
+    let label_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let value_style = Style::default().fg(Color::White);
 
     let text = vec![
         Line::from(vec![
-            Span::styled("Command:  ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&layer.command),
+            Span::styled("Command:  ", label_style),
+            Span::styled(command, value_style),
         ]),
         Line::from(vec![
-            Span::styled("Digest:   ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&layer.digest),
+            Span::styled("Digest:   ", label_style),
+            Span::styled(&layer.digest, value_style),
         ]),
         Line::from(vec![
-            Span::styled("DiffID:   ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&layer.diff_id),
+            Span::styled("DiffID:   ", label_style),
+            Span::styled(&layer.diff_id, value_style),
         ]),
         Line::from(vec![
-            Span::styled("Size:     ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(tree::human_size(layer.size)),
+            Span::styled("Size:     ", label_style),
+            Span::styled(tree::human_size(layer.size), value_style),
         ]),
         Line::from(vec![
-            Span::styled("Created:  ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&layer.created),
+            Span::styled("Created:  ", label_style),
+            Span::styled(&layer.created, value_style),
         ]),
         Line::from(vec![
-            Span::styled("Files:    ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(file_count.to_string()),
+            Span::styled("Files:    ", label_style),
+            Span::styled(file_count.to_string(), value_style),
         ]),
     ];
 
@@ -535,6 +649,7 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
+                .title_style(title_style)
                 .title(" Details "),
         )
         .wrap(Wrap { trim: false });
@@ -547,8 +662,9 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         format!("Output dir: {}█", app.input_buf)
     } else if app.status.is_empty() {
         format!(
-            " {} │ {} │ {} │ q:quit tab:focus j/k:nav enter:expand space:select e:extract t:toggle o:output",
+            " {} │ {}/{} │ {} │ q:quit tab:focus j/k:nav enter:expand space:select e:extract a:all t:toggle o:output",
             app.image.source,
+            app.image.os,
             app.image.architecture,
             tree::human_size(app.image.total_size),
         )
@@ -556,16 +672,23 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         format!(" {}", app.status)
     };
 
-    let bar = Paragraph::new(content)
-        .style(Style::default().bg(Color::DarkGray).fg(Color::White));
+    let bar = Paragraph::new(content).style(
+        Style::default()
+            .bg(Color::Rgb(40, 40, 60))
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    );
     f.render_widget(bar, area);
 }
 
+fn clean_command(cmd: &str) -> String {
+    let stripped = cmd.replace("/bin/sh -c ", "").replace("#(nop) ", "");
+    // Collapse internal whitespace (newlines, tabs, multiple spaces)
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn truncate_command(cmd: &str, max_len: usize) -> String {
-    // Strip common prefixes for readability
-    let cleaned = cmd
-        .replace("/bin/sh -c ", "")
-        .replace("#(nop) ", "");
+    let cleaned = clean_command(cmd);
     if cleaned.len() > max_len {
         format!("{}…", &cleaned[..max_len.saturating_sub(1)])
     } else {
