@@ -139,4 +139,4 @@ Authentication is resolved in order: environment variables, Docker credential st
 
 ## License
 
-MIT
+Apache-2.0
