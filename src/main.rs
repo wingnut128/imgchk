@@ -1,3 +1,4 @@
+mod cache;
 mod extract;
 mod image;
 mod tree;
@@ -30,10 +31,7 @@ fn main() -> anyhow::Result<()> {
         image::load_tarball(std::path::Path::new(&cli.image))?
     } else {
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(image::load_registry(
-            &cli.image,
-            cli.platform.as_deref(),
-        ))?
+        rt.block_on(image::load_registry(&cli.image, cli.platform.as_deref()))?
     };
 
     if image.layers.is_empty() {
