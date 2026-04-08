@@ -68,3 +68,8 @@ Thumbs.db
 
 # Test images
 *.tar
+
+
+# Added by cargo
+
+/target

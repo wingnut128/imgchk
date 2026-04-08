@@ -1,61 +1,41 @@
 BINARY_NAME := imgchk
-MODULE := imgchk
-GO := go
-GOFLAGS :=
-LDFLAGS := -s -w
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-# Build output directory
-DIST := dist
-
-.PHONY: all build clean run fmt vet lint test install
+.PHONY: all build release clean run test fmt lint install help
 
 all: build
 
-## build: Build the binary
+## build: Build debug binary
 build:
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) .
+	cargo build
 
-## dist: Build release binaries for all platforms
-dist:
-	@mkdir -p $(DIST)
-	GOOS=darwin GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY_NAME)-darwin-amd64 .
-	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY_NAME)-darwin-arm64 .
-	GOOS=linux GOARCH=amd64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY_NAME)-linux-amd64 .
-	GOOS=linux GOARCH=arm64 $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY_NAME)-linux-arm64 .
-
-## install: Install to $GOPATH/bin
-install:
-	$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" .
+## release: Build optimized release binary
+release:
+	cargo build --release
 
 ## run: Build and run with ARGS (e.g., make run ARGS="nginx.tar")
 run: build
-	./$(BINARY_NAME) $(ARGS)
+	cargo run -- $(ARGS)
 
 ## test: Run tests
 test:
-	$(GO) test ./... -v
+	cargo test
 
 ## fmt: Format source code
 fmt:
-	$(GO) fmt ./...
+	cargo fmt
 
-## vet: Run go vet
-vet:
-	$(GO) vet ./...
+## lint: Run clippy lints
+lint:
+	cargo clippy -- -D warnings
 
-## lint: Run staticcheck (install with: go install honnef.co/go/tools/cmd/staticcheck@latest)
-lint: vet
-	@command -v staticcheck >/dev/null 2>&1 && staticcheck ./... || echo "staticcheck not installed, skipping"
-
-## tidy: Tidy module dependencies
-tidy:
-	$(GO) mod tidy
+## install: Install to ~/.cargo/bin
+install:
+	cargo install --path .
 
 ## clean: Remove build artifacts
 clean:
-	rm -f $(BINARY_NAME)
-	rm -rf $(DIST)
-	$(GO) clean
+	cargo clean
 
 ## help: Show this help
 help:

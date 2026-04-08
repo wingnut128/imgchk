@@ -1,0 +1,97 @@
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use anyhow::Context;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+
+use crate::image::LayerInfo;
+
+/// Extract specific files from a layer's blob to an output directory.
+/// Returns the number of files extracted.
+pub fn extract_files(
+    layer: &LayerInfo,
+    selected_paths: &[String],
+    output_dir: &Path,
+) -> anyhow::Result<usize> {
+    let file = std::fs::File::open(&layer.blob_path)
+        .with_context(|| format!("opening layer blob: {}", layer.blob_path.display()))?;
+
+    let reader: Box<dyn Read> = if layer.media_type.contains("gzip")
+        || layer.blob_path.extension().is_some_and(|e| e == "gz")
+    {
+        Box::new(GzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+
+    let mut archive = tar::Archive::new(reader);
+    let mut count = 0;
+
+    let selected_set: std::collections::HashSet<&str> =
+        selected_paths.iter().map(|s| s.as_str()).collect();
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let raw_path = entry.path()?.to_string_lossy().to_string();
+        let normalized = normalize_path(&raw_path);
+
+        if !selected_set.contains(normalized.as_str()) {
+            continue;
+        }
+
+        let dest = output_dir.join(normalized.trim_start_matches('/'));
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut out = std::fs::File::create(&dest)?;
+        std::io::copy(&mut entry, &mut out)?;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+/// Export a layer as a tar.gz file in the output directory.
+/// Returns the path to the created file.
+pub fn export_layer(layer: &LayerInfo, output_dir: &Path) -> anyhow::Result<PathBuf> {
+    let dest = output_dir.join(format!("layer-{}.tar.gz", layer.index));
+
+    let blob_data = std::fs::read(&layer.blob_path)
+        .with_context(|| format!("reading layer blob: {}", layer.blob_path.display()))?;
+
+    // Check if already gzipped by looking for magic bytes
+    if blob_data.len() >= 2 && blob_data[0] == 0x1f && blob_data[1] == 0x8b {
+        // Already gzipped, just copy
+        std::fs::write(&dest, &blob_data)?;
+    } else {
+        // Compress as gzip
+        let out = std::fs::File::create(&dest)?;
+        let mut encoder = GzEncoder::new(out, Compression::default());
+        std::io::copy(&mut std::io::Cursor::new(&blob_data), &mut encoder)?;
+        encoder.finish()?;
+    }
+
+    Ok(dest)
+}
+
+/// Export all layers as tar.gz files. Returns paths created.
+pub fn export_all_layers(layers: &[LayerInfo], output_dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    std::fs::create_dir_all(output_dir)?;
+    let mut paths = Vec::new();
+    for layer in layers {
+        paths.push(export_layer(layer, output_dir)?);
+    }
+    Ok(paths)
+}
+
+fn normalize_path(raw: &str) -> String {
+    let stripped = raw.trim_start_matches("./").trim_start_matches('/');
+    if stripped.is_empty() {
+        "/".into()
+    } else {
+        format!("/{}", stripped.trim_end_matches('/'))
+    }
+}
