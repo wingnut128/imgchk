@@ -7,11 +7,11 @@ all: build
 
 ## build: Build debug binary
 build:
-	cargo build
+	cargo build && echo "pass" > target/.last_build_status || { echo "fail" > target/.last_build_status; exit 1; }
 
 ## release: Build optimized release binary
 release:
-	cargo build --release
+	cargo build --release && echo "pass" > target/.last_build_status || { echo "fail" > target/.last_build_status; exit 1; }
 
 ## run: Build and run with ARGS (e.g., make run ARGS="nginx.tar")
 run: build
