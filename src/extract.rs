@@ -5,9 +5,104 @@ use anyhow::Context;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use ocirender::{ImageSpec, LayerMeta, StreamingPacker};
 
 use crate::image::LayerInfo;
 use crate::tree;
+
+// ── Output format ───────────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OutputFormat {
+    TarGz,
+    Tar,
+    Squashfs,
+    Dir,
+}
+
+impl OutputFormat {
+    pub fn next(self) -> Self {
+        match self {
+            Self::TarGz => Self::Tar,
+            Self::Tar => Self::Squashfs,
+            Self::Squashfs => Self::Dir,
+            Self::Dir => Self::TarGz,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TarGz => "tar.gz",
+            Self::Tar => "tar",
+            Self::Squashfs => "squashfs",
+            Self::Dir => "dir",
+        }
+    }
+}
+
+/// Build an ImageSpec for the given format and output directory.
+pub fn make_image_spec(format: OutputFormat, output_dir: &Path, name: &str) -> ImageSpec {
+    match format {
+        OutputFormat::Tar => ImageSpec::Tar {
+            path: output_dir.join(format!("{name}.tar")),
+        },
+        OutputFormat::Squashfs => ImageSpec::Squashfs {
+            path: output_dir.join(format!("{name}.squashfs")),
+            binpath: None,
+        },
+        OutputFormat::Dir => ImageSpec::Dir {
+            path: output_dir.join(name),
+        },
+        OutputFormat::TarGz => unreachable!("TarGz uses the existing export path"),
+    }
+}
+
+/// Export all layers merged into a single output via ocirender's StreamingPacker.
+pub fn export_ocirender(layers: &[LayerInfo], spec: ImageSpec) -> anyhow::Result<PathBuf> {
+    let metas: Vec<LayerMeta> = layers
+        .iter()
+        .enumerate()
+        .map(|(i, l)| LayerMeta {
+            index: i,
+            media_type: l.media_type.clone(),
+        })
+        .collect();
+
+    let output_path = spec.path().to_path_buf();
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let packer = StreamingPacker::new(metas, spec, None);
+        for (i, layer) in layers.iter().enumerate() {
+            packer
+                .notify_layer_ready(i, layer.blob_path.clone())
+                .await?;
+        }
+        packer.finish().await
+    })?;
+
+    Ok(output_path)
+}
+
+/// Export a single layer via ocirender (re-indexes to 0).
+pub fn export_ocirender_single(layer: &LayerInfo, spec: ImageSpec) -> anyhow::Result<PathBuf> {
+    let meta = LayerMeta {
+        index: 0,
+        media_type: layer.media_type.clone(),
+    };
+    let output_path = spec.path().to_path_buf();
+
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        let packer = StreamingPacker::new(vec![meta], spec, None);
+        packer
+            .notify_layer_ready(0, layer.blob_path.clone())
+            .await?;
+        packer.finish().await
+    })?;
+
+    Ok(output_path)
+}
 
 /// Extract specific files from a layer's blob to an output directory.
 /// Returns the number of files extracted.
