@@ -7,6 +7,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 
 use crate::image::LayerInfo;
+use crate::tree;
 
 /// Extract specific files from a layer's blob to an output directory.
 /// Returns the number of files extracted.
@@ -32,10 +33,14 @@ pub fn extract_files(
     let selected_set: std::collections::HashSet<&str> =
         selected_paths.iter().map(|s| s.as_str()).collect();
 
+    std::fs::create_dir_all(output_dir)?;
+    let canonical_out =
+        std::fs::canonicalize(output_dir).unwrap_or_else(|_| output_dir.to_path_buf());
+
     for entry in archive.entries()? {
         let mut entry = entry?;
         let raw_path = entry.path()?.to_string_lossy().to_string();
-        let normalized = normalize_path(&raw_path);
+        let normalized = tree::normalize_path(&raw_path);
 
         if !selected_set.contains(normalized.as_str()) {
             continue;
@@ -44,6 +49,12 @@ pub fn extract_files(
         let dest = output_dir.join(normalized.trim_start_matches('/'));
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
+        }
+        let canonical_dest = std::fs::canonicalize(dest.parent().unwrap_or(output_dir))
+            .unwrap_or_else(|_| output_dir.to_path_buf())
+            .join(dest.file_name().unwrap_or_default());
+        if !canonical_dest.starts_with(&canonical_out) {
+            continue;
         }
 
         let mut out = std::fs::File::create(&dest)?;
@@ -85,13 +96,4 @@ pub fn export_all_layers(layers: &[LayerInfo], output_dir: &Path) -> anyhow::Res
         paths.push(export_layer(layer, output_dir)?);
     }
     Ok(paths)
-}
-
-fn normalize_path(raw: &str) -> String {
-    let stripped = raw.trim_start_matches("./").trim_start_matches('/');
-    if stripped.is_empty() {
-        "/".into()
-    } else {
-        format!("/{}", stripped.trim_end_matches('/'))
-    }
 }

@@ -78,11 +78,7 @@ impl FileTree {
                 is_whiteout,
                 is_opaque,
                 link_target,
-                children: if is_dir {
-                    BTreeMap::new()
-                } else {
-                    BTreeMap::new()
-                },
+                children: BTreeMap::new(),
             };
 
             if !is_dir {
@@ -126,23 +122,21 @@ impl FileTree {
                 }
             } else {
                 // Ensure intermediate directory exists
-                let dir_path =
-                    format!("/{}", parts[..=i].join("/"));
-                current =
-                    current
-                        .children
-                        .entry(part.to_string())
-                        .or_insert_with(|| FileNode {
-                            name: part.to_string(),
-                            path: dir_path,
-                            size: 0,
-                            mode: 0o755,
-                            is_dir: true,
-                            is_whiteout: false,
-                            is_opaque: false,
-                            link_target: None,
-                            children: BTreeMap::new(),
-                        });
+                let dir_path = format!("/{}", parts[..=i].join("/"));
+                current = current
+                    .children
+                    .entry(part.to_string())
+                    .or_insert_with(|| FileNode {
+                        name: part.to_string(),
+                        path: dir_path,
+                        size: 0,
+                        mode: 0o755,
+                        is_dir: true,
+                        is_whiteout: false,
+                        is_opaque: false,
+                        link_target: None,
+                        children: BTreeMap::new(),
+                    });
             }
         }
     }
@@ -254,12 +248,17 @@ fn collect_paths_inner(node: &FileNode, paths: &mut Vec<String>) {
 }
 
 /// Normalize a tar path to absolute form: /foo/bar
-fn normalize_path(raw: &str) -> String {
+/// Rejects path traversal components (..) to prevent writes outside output dirs.
+pub fn normalize_path(raw: &str) -> String {
     let stripped = raw.trim_start_matches("./").trim_start_matches('/');
-    if stripped.is_empty() {
+    let parts: Vec<&str> = stripped
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != "." && *s != "..")
+        .collect();
+    if parts.is_empty() {
         "/".into()
     } else {
-        format!("/{}", stripped.trim_end_matches('/'))
+        format!("/{}", parts.join("/"))
     }
 }
 
