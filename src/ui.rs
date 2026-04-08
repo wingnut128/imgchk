@@ -10,7 +10,7 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
-use crate::extract;
+use crate::extract::{self, OutputFormat};
 use crate::image::ImageInfo;
 use crate::tree::{self, FileNode, FileTree};
 
@@ -66,6 +66,10 @@ pub struct App {
 
     // Output
     output_dir: Option<PathBuf>,
+    output_format: OutputFormat,
+
+    // Details pane scroll
+    detail_scroll: u16,
 
     // Status bar message
     status: String,
@@ -89,6 +93,8 @@ impl App {
             selected_files: HashSet::new(),
             dir_selection: std::collections::HashMap::new(),
             output_dir,
+            output_format: OutputFormat::TarGz,
+            detail_scroll: 0,
             status: String::new(),
             input_mode: false,
             input_buf: String::new(),
@@ -258,6 +264,10 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                         "Layer view".into()
                     };
                 }
+                KeyCode::Char('f') => {
+                    app.output_format = app.output_format.next();
+                    app.status = format!("Export format: {}", app.output_format.label());
+                }
                 KeyCode::Char('o') => {
                     app.input_mode = true;
                     app.input_buf.clear();
@@ -268,6 +278,7 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                         if app.layer_index < app.image.layers.len().saturating_sub(1) {
                             app.layer_index += 1;
                             app.selected_files.clear();
+                            app.detail_scroll = 0;
                             app.rebuild_file_rows();
                         }
                     }
@@ -276,13 +287,16 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                             app.file_index += 1;
                         }
                     }
-                    Pane::Details => {}
+                    Pane::Details => {
+                        app.detail_scroll = app.detail_scroll.saturating_add(1);
+                    }
                 },
                 KeyCode::Char('k') | KeyCode::Up => match app.focus {
                     Pane::Layers => {
                         if app.layer_index > 0 {
                             app.layer_index -= 1;
                             app.selected_files.clear();
+                            app.detail_scroll = 0;
                             app.rebuild_file_rows();
                         }
                     }
@@ -291,7 +305,9 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                             app.file_index -= 1;
                         }
                     }
-                    Pane::Details => {}
+                    Pane::Details => {
+                        app.detail_scroll = app.detail_scroll.saturating_sub(1);
+                    }
                 },
                 KeyCode::Enter => {
                     if app.focus == Pane::Files {
@@ -339,29 +355,55 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                 KeyCode::Char('a') => {
                     if app.focus == Pane::Layers {
                         let dir = app.ensure_output_dir();
-                        match extract::export_all_layers(&app.image.layers, &dir) {
-                            Ok(paths) => {
-                                app.status =
-                                    format!("Exported {} layers to {}", paths.len(), dir.display());
+                        let fmt = app.output_format;
+                        let result = match fmt {
+                            OutputFormat::TarGz => {
+                                extract::export_all_layers(&app.image.layers, &dir).map(|paths| {
+                                    format!("Exported {} layers to {}", paths.len(), dir.display())
+                                })
                             }
-                            Err(e) => {
-                                app.status = format!("Export error: {}", e);
+                            _ => {
+                                let spec = extract::make_image_spec(fmt, &dir, "image");
+                                extract::export_ocirender(&app.image.layers, spec).map(|path| {
+                                    format!(
+                                        "Exported all layers as {} to {}",
+                                        fmt.label(),
+                                        path.display()
+                                    )
+                                })
                             }
+                        };
+                        match result {
+                            Ok(msg) => app.status = msg,
+                            Err(e) => app.status = format!("Export error: {}", e),
                         }
                     }
                 }
                 KeyCode::Char('e') => match app.focus {
                     Pane::Layers => {
                         let dir = app.ensure_output_dir();
+                        let fmt = app.output_format;
                         let layer = &app.image.layers[app.layer_index];
-                        match extract::export_layer(layer, &dir) {
-                            Ok(path) => {
-                                app.status =
-                                    format!("Exported layer {} to {}", layer.index, path.display());
+                        let result = match fmt {
+                            OutputFormat::TarGz => extract::export_layer(layer, &dir).map(|path| {
+                                format!("Exported layer {} to {}", layer.index, path.display())
+                            }),
+                            _ => {
+                                let name = format!("layer-{}", layer.index);
+                                let spec = extract::make_image_spec(fmt, &dir, &name);
+                                extract::export_ocirender_single(layer, spec).map(|path| {
+                                    format!(
+                                        "Exported layer {} as {} to {}",
+                                        layer.index,
+                                        fmt.label(),
+                                        path.display()
+                                    )
+                                })
                             }
-                            Err(e) => {
-                                app.status = format!("Export error: {}", e);
-                            }
+                        };
+                        match result {
+                            Ok(msg) => app.status = msg,
+                            Err(e) => app.status = format!("Export error: {}", e),
                         }
                     }
                     Pane::Files => {
@@ -498,6 +540,14 @@ fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.layer_index));
     f.render_stateful_widget(list, area, &mut state);
+
+    let mut scrollbar_state = ScrollbarState::new(app.image.layers.len()).position(app.layer_index);
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .style(Style::default().fg(Color::DarkGray)),
+        area.inner(Margin::new(0, 1)),
+        &mut scrollbar_state,
+    );
 }
 
 fn draw_files(f: &mut Frame, app: &App, area: Rect) {
@@ -603,6 +653,14 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.file_index));
     f.render_stateful_widget(list, area, &mut state);
+
+    let mut scrollbar_state = ScrollbarState::new(app.file_rows.len()).position(app.file_index);
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .style(Style::default().fg(Color::DarkGray)),
+        area.inner(Margin::new(0, 1)),
+        &mut scrollbar_state,
+    );
 }
 
 fn draw_details(f: &mut Frame, app: &App, area: Rect) {
@@ -667,6 +725,8 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
+    let total_lines = lines.len();
+
     let paragraph = Paragraph::new(lines)
         .block(
             Block::default()
@@ -675,9 +735,18 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
                 .title_style(title_style)
                 .title(" Details "),
         )
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((app.detail_scroll, 0));
 
     f.render_widget(paragraph, area);
+
+    let mut scrollbar_state = ScrollbarState::new(total_lines).position(app.detail_scroll as usize);
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .style(Style::default().fg(Color::DarkGray)),
+        area.inner(Margin::new(0, 1)),
+        &mut scrollbar_state,
+    );
 }
 
 fn format_command(cmd: &str) -> Vec<String> {
@@ -815,11 +884,12 @@ fn draw_status(f: &mut Frame, app: &App, area: Rect) {
         format!("Output dir: {}█", app.input_buf)
     } else if app.status.is_empty() {
         format!(
-            " {} │ {}/{} │ {} │ q:quit tab:focus j/k:nav enter:expand space:select e:extract a:all t:toggle o:output",
+            " {} │ {}/{} │ {} │ fmt:{} │ q:quit tab j/k e:extract a:all f:format t:toggle o:output",
             app.image.source,
             app.image.os,
             app.image.architecture,
             tree::human_size(app.image.total_size),
+            app.output_format.label(),
         )
     } else {
         format!(" {}", app.status)
