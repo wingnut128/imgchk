@@ -190,8 +190,8 @@ struct CredHelperResponse {
 }
 
 /// Resolve registry auth: env var first, then Docker credential store, then anonymous.
-fn resolve_auth(registry: &str) -> oci_distribution::secrets::RegistryAuth {
-    use oci_distribution::secrets::RegistryAuth;
+fn resolve_auth(registry: &str) -> oci_client::secrets::RegistryAuth {
+    use oci_client::secrets::RegistryAuth;
 
     // 1. Check env var
     if let (Ok(user), Ok(token)) = (
@@ -212,8 +212,8 @@ fn resolve_auth(registry: &str) -> oci_distribution::secrets::RegistryAuth {
 }
 
 /// Read Docker's credential store for a given registry hostname.
-fn docker_credential(registry: &str) -> Option<oci_distribution::secrets::RegistryAuth> {
-    use oci_distribution::secrets::RegistryAuth;
+fn docker_credential(registry: &str) -> Option<oci_client::secrets::RegistryAuth> {
+    use oci_client::secrets::RegistryAuth;
 
     let config_path = dirs_path().join("config.json");
     let config_data = std::fs::read_to_string(&config_path).ok()?;
@@ -282,9 +282,9 @@ fn registry_to_server_url(registry: &str) -> String {
 
 /// Load an image from a registry reference (e.g., "nginx:latest").
 pub async fn load_registry(reference: &str, platform: Option<&str>) -> anyhow::Result<ImageInfo> {
-    use oci_distribution::client::{ClientConfig, ClientProtocol};
-    use oci_distribution::manifest::ImageIndexEntry;
-    use oci_distribution::Reference;
+    use oci_client::client::{ClientConfig, ClientProtocol};
+    use oci_client::manifest::ImageIndexEntry;
+    use oci_client::Reference;
 
     let image_ref: Reference = reference.parse().context("invalid image reference")?;
 
@@ -304,10 +304,9 @@ pub async fn load_registry(reference: &str, platform: Option<&str>) -> anyhow::R
         entries
             .iter()
             .find(|entry| {
-                entry
-                    .platform
-                    .as_ref()
-                    .is_some_and(|p| p.os == resolver_os && p.architecture == resolver_arch)
+                entry.platform.as_ref().is_some_and(|p| {
+                    p.os.to_string() == resolver_os && p.architecture.to_string() == resolver_arch
+                })
             })
             .map(|entry| entry.digest.clone())
     };
@@ -317,7 +316,7 @@ pub async fn load_registry(reference: &str, platform: Option<&str>) -> anyhow::R
         platform_resolver: Some(Box::new(platform_resolver)),
         ..Default::default()
     };
-    let client = oci_distribution::Client::new(config);
+    let client = oci_client::Client::new(config);
     let auth = resolve_auth(image_ref.resolve_registry());
 
     use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
