@@ -1,7 +1,7 @@
 BINARY_NAME := imgchk
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all build release clean run test fmt lint install help
+.PHONY: all build release clean run test fmt lint install hooks help
 
 all: build
 
@@ -32,6 +32,12 @@ lint:
 ## install: Install to ~/.cargo/bin
 install:
 	cargo install --path .
+
+## hooks: Install git pre-commit hook
+hooks:
+	cp scripts/pre-commit .git/hooks/pre-commit
+	chmod +x .git/hooks/pre-commit
+	@echo "Pre-commit hook installed."
 
 ## clean: Remove build artifacts
 clean:
