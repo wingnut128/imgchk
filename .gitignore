@@ -1,17 +1,9 @@
-# Go build artifacts
-/imgchk
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-/dist/
+# Rust / Cargo
+/target
+**/*.rs.bk
 
-# Go workspace
-go.work
-go.work.sum
+# Build output
+/dist/
 
 # Environment and credentials
 .env
@@ -40,7 +32,6 @@ service-account*.json
 *token*
 !src/**
 !tests/**
-!internal/**
 
 # Editor swap/backup files
 *.swp
@@ -68,8 +59,3 @@ Thumbs.db
 
 # Test images
 *.tar
-
-
-# Added by cargo
-
-/target
