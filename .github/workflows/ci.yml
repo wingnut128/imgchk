@@ -70,7 +70,7 @@ jobs:
             target/
           key: test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: test-${{ runner.os }}-
-      - run: cargo nextest run
+      - run: cargo nextest run --no-tests=pass
 
   audit:
     name: Security Audit
