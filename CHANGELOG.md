@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1]
+
+### Added
+- Linux `aarch64-unknown-linux-gnu` release binary, built natively on `ubuntu-24.04-arm`.
+
+### Changed
+- Bumped workflow action pins to Node.js 24-compatible majors (`upload-artifact@v7`, `download-artifact@v8`, `dorny/paths-filter@v4`) ahead of GitHub's September 2026 Node.js 20 removal.
+- `cargo nextest run` now passes `--no-tests=pass` so CI is green until test modules exist.
+
 ## [0.2.0]
 
 ### Added
