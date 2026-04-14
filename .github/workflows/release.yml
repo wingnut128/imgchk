@@ -121,7 +121,7 @@ jobs:
           mkdir -p dist
           cp "target/${TARGET}/release/imgchk" "dist/imgchk-${RELEASE_VERSION}-${TARGET}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: imgchk-${{ matrix.target }}
           path: dist/imgchk-*
@@ -153,7 +153,7 @@ jobs:
           echo "Release notes:"
           cat release_notes.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
