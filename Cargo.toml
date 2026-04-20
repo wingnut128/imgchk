@@ -7,7 +7,7 @@ description = "Container image inspector and layer extraction tool"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.28"
+crossterm = "0.29"
 ratatui = "0.30"
 tar = "0.4"
 flate2 = "1"
