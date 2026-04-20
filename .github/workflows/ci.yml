@@ -35,7 +35,7 @@ jobs:
               - "tests/**"
               - "Cargo.toml"
               - "Cargo.lock"
-              - ".github/workflows/**"
+              - ".github/workflows/ci.yml"
 
   lint:
     name: Format & Lint

@@ -9,6 +9,9 @@ on:
       - "LICENSE"
       - ".gitignore"
       - ".editorconfig"
+      - ".github/CODEOWNERS"
+      - ".github/dependabot.yml"
+      - ".pre-commit-config.yaml"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -17,6 +20,9 @@ on:
       - "LICENSE"
       - ".gitignore"
       - ".editorconfig"
+      - ".github/CODEOWNERS"
+      - ".github/dependabot.yml"
+      - ".pre-commit-config.yaml"
   schedule:
     - cron: "0 6 * * 1"
 

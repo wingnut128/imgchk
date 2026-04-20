@@ -309,74 +309,67 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                         app.detail_scroll = app.detail_scroll.saturating_sub(1);
                     }
                 },
-                KeyCode::Enter => {
-                    if app.focus == Pane::Files {
-                        if let Some(row) = app.file_rows.get(app.file_index) {
-                            if row.is_dir {
-                                let path = row.path.clone();
-                                if app.expanded_dirs.contains(&path) {
-                                    app.expanded_dirs.remove(&path);
-                                } else {
-                                    app.expanded_dirs.insert(path);
-                                }
-                                app.rebuild_file_rows();
+                KeyCode::Enter if app.focus == Pane::Files => {
+                    if let Some(row) = app.file_rows.get(app.file_index) {
+                        if row.is_dir {
+                            let path = row.path.clone();
+                            if app.expanded_dirs.contains(&path) {
+                                app.expanded_dirs.remove(&path);
+                            } else {
+                                app.expanded_dirs.insert(path);
                             }
+                            app.rebuild_file_rows();
                         }
                     }
                 }
-                KeyCode::Char(' ') => {
-                    if app.focus == Pane::Files {
-                        if let Some(row) = app.file_rows.get(app.file_index) {
-                            let path = row.path.clone();
-                            if row.is_dir {
-                                if let Some(node) = find_node(&app.cached_tree.root, &path) {
-                                    let paths = tree::collect_paths(node);
-                                    let all_selected =
-                                        paths.iter().all(|p| app.selected_files.contains(p));
-                                    if all_selected {
-                                        for p in paths {
-                                            app.selected_files.remove(&p);
-                                        }
-                                    } else {
-                                        for p in paths {
-                                            app.selected_files.insert(p);
-                                        }
+                KeyCode::Char(' ') if app.focus == Pane::Files => {
+                    if let Some(row) = app.file_rows.get(app.file_index) {
+                        let path = row.path.clone();
+                        if row.is_dir {
+                            if let Some(node) = find_node(&app.cached_tree.root, &path) {
+                                let paths = tree::collect_paths(node);
+                                let all_selected =
+                                    paths.iter().all(|p| app.selected_files.contains(p));
+                                if all_selected {
+                                    for p in paths {
+                                        app.selected_files.remove(&p);
+                                    }
+                                } else {
+                                    for p in paths {
+                                        app.selected_files.insert(p);
                                     }
                                 }
-                            } else if app.selected_files.contains(&path) {
-                                app.selected_files.remove(&path);
-                            } else {
-                                app.selected_files.insert(path);
                             }
-                            app.rebuild_dir_selection();
+                        } else if app.selected_files.contains(&path) {
+                            app.selected_files.remove(&path);
+                        } else {
+                            app.selected_files.insert(path);
                         }
+                        app.rebuild_dir_selection();
                     }
                 }
-                KeyCode::Char('a') => {
-                    if app.focus == Pane::Layers {
-                        let dir = app.ensure_output_dir();
-                        let fmt = app.output_format;
-                        let result = match fmt {
-                            OutputFormat::TarGz => {
-                                extract::export_all_layers(&app.image.layers, &dir).map(|paths| {
-                                    format!("Exported {} layers to {}", paths.len(), dir.display())
-                                })
-                            }
-                            _ => {
-                                let spec = extract::make_image_spec(fmt, &dir, "image");
-                                extract::export_ocirender(&app.image.layers, spec).map(|path| {
-                                    format!(
-                                        "Exported all layers as {} to {}",
-                                        fmt.label(),
-                                        path.display()
-                                    )
-                                })
-                            }
-                        };
-                        match result {
-                            Ok(msg) => app.status = msg,
-                            Err(e) => app.status = format!("Export error: {}", e),
+                KeyCode::Char('a') if app.focus == Pane::Layers => {
+                    let dir = app.ensure_output_dir();
+                    let fmt = app.output_format;
+                    let result = match fmt {
+                        OutputFormat::TarGz => extract::export_all_layers(&app.image.layers, &dir)
+                            .map(|paths| {
+                                format!("Exported {} layers to {}", paths.len(), dir.display())
+                            }),
+                        _ => {
+                            let spec = extract::make_image_spec(fmt, &dir, "image");
+                            extract::export_ocirender(&app.image.layers, spec).map(|path| {
+                                format!(
+                                    "Exported all layers as {} to {}",
+                                    fmt.label(),
+                                    path.display()
+                                )
+                            })
                         }
+                    };
+                    match result {
+                        Ok(msg) => app.status = msg,
+                        Err(e) => app.status = format!("Export error: {}", e),
                     }
                 }
                 KeyCode::Char('e') => match app.focus {

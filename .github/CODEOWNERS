@@ -1,0 +1,9 @@
+# Code owners for this repo.
+#
+# Every path in the repo is owned by the listed user(s); they are
+# automatically requested for review on any PR that touches the path.
+# Lines are matched top-to-bottom, with the last match winning — so keep
+# the catch-all (*) rule first and add more specific rules below if
+# multiple owners need to split responsibilities.
+
+* @wingnut128
