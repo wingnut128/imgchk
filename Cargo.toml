@@ -17,4 +17,4 @@ tempfile = "3"
 tokio = { version = "1", features = ["full"] }
 oci-client = "0.16"
 ocirender = "0.2"
-indicatif = "0.17"
+indicatif = "0.18"
