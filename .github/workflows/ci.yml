@@ -99,7 +99,7 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: taiki-e/install-action@10008029e4a4ab952eea28f7f4fecbbb6ea63767 # cargo-audit
+      - uses: taiki-e/install-action@1222bc9d54bca5582f30a2aac6829eeb5fccf68b # cargo-audit
       - run: cargo audit
 
   build:
