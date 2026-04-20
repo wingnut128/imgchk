@@ -1,0 +1,11 @@
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0097 — rand unsound with custom logger via `rand::rng()`
+    # Flagged on rand 0.8.5, which is pulled into Cargo.lock only via the
+    # disabled `ratatui-termwiz` backend (chain: ratatui-termwiz → termwiz →
+    # phf → phf_generator 0.11 → rand 0.8). We use `ratatui-crossterm`, so
+    # rand 0.8 is never compiled. The unsound API (`rand::rng()`) is 0.9-only
+    # and cannot be reached from 0.8 code. Revisit once termwiz/phf bump to a
+    # phf_generator that uses rand 0.9.
+    "RUSTSEC-2026-0097",
+]
