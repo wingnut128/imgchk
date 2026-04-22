@@ -2,9 +2,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 use ocirender::{ImageSpec, LayerMeta, StreamingPacker};
 
 use crate::image::LayerInfo;

@@ -2,11 +2,11 @@ use std::collections::HashSet;
 use std::io;
 use std::path::PathBuf;
 
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
@@ -310,16 +310,16 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     }
                 },
                 KeyCode::Enter if app.focus == Pane::Files => {
-                    if let Some(row) = app.file_rows.get(app.file_index) {
-                        if row.is_dir {
-                            let path = row.path.clone();
-                            if app.expanded_dirs.contains(&path) {
-                                app.expanded_dirs.remove(&path);
-                            } else {
-                                app.expanded_dirs.insert(path);
-                            }
-                            app.rebuild_file_rows();
+                    if let Some(row) = app.file_rows.get(app.file_index)
+                        && row.is_dir
+                    {
+                        let path = row.path.clone();
+                        if app.expanded_dirs.contains(&path) {
+                            app.expanded_dirs.remove(&path);
+                        } else {
+                            app.expanded_dirs.insert(path);
                         }
+                        app.rebuild_file_rows();
                     }
                 }
                 KeyCode::Char(' ') if app.focus == Pane::Files => {
@@ -559,11 +559,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
         .map(|row| {
             let indent = "  ".repeat(row.depth);
             let icon = if row.is_dir {
-                if row.expanded {
-                    "▾ "
-                } else {
-                    "▸ "
-                }
+                if row.expanded { "▾ " } else { "▸ " }
             } else {
                 "  "
             };
