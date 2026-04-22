@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2]
+
+### Changed
+- Migrated to Rust 2024 edition (requires rustc 1.85+).
+- Bumped dependencies: `ocirender` 0.2.0 → 0.2.1, `indicatif` 0.17 → 0.18, `clap` 4.6.0 → 4.6.1, `tokio` 1.51 → 1.52, `crossterm` 0.28 → 0.29.
+
+### Security
+- Bumped `rustls-webpki` 0.103.12 → 0.103.13 for RUSTSEC-2026-0104 (reachable panic in CRL parsing).
+- Ignored RUSTSEC-2026-0097 (unreachable `rand` 0.8 in the `sqlx-postgres` transitive chain); the vulnerable pattern isn't used.
+
+### CI
+- Pinned `taiki-e/install-action` to a release SHA; bumped `actions/upload-artifact` v7, `actions/checkout` v6, `github/codeql-action` v4, `ossf/scorecard-action` v2.4.3.
+- `cargo-audit` wired into CI; StepSecurity hardening applied across workflows.
+- Dependabot auto-merge now uses `GITHUB_TOKEN`.
+
 ## [0.2.1]
 
 ### Added

@@ -282,9 +282,9 @@ fn registry_to_server_url(registry: &str) -> String {
 
 /// Load an image from a registry reference (e.g., "nginx:latest").
 pub async fn load_registry(reference: &str, platform: Option<&str>) -> anyhow::Result<ImageInfo> {
+    use oci_client::Reference;
     use oci_client::client::{ClientConfig, ClientProtocol};
     use oci_client::manifest::ImageIndexEntry;
-    use oci_client::Reference;
 
     let image_ref: Reference = reference.parse().context("invalid image reference")?;
 
