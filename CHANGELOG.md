@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped dependencies: `ocirender` 0.2.0 → 0.2.1, `indicatif` 0.17 → 0.18, `clap` 4.6.0 → 4.6.1, `tokio` 1.51 → 1.52, `crossterm` 0.28 → 0.29.
 
 ### Security
+- Bumped `rustls-webpki` 0.103.12 → 0.103.13 for RUSTSEC-2026-0104 (reachable panic in CRL parsing).
 - Ignored RUSTSEC-2026-0097 (unreachable `rand` 0.8 in the `sqlx-postgres` transitive chain); the vulnerable pattern isn't used.
 
 ### CI
