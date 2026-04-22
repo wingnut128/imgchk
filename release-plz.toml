@@ -1,0 +1,21 @@
+[workspace]
+# Binary-only project; don't publish to crates.io.
+publish = false
+# Keep the GitHub Release + tag creation — release.yml builds and
+# uploads binaries on tag push.
+git_release_enable = true
+git_tag_enable = true
+# Keep the changelog in the repo, generated from conventional commits.
+changelog_update = true
+# The binary-upload workflow triggers on tag push; create release as
+# draft so it isn't public until the binaries are attached.
+git_release_draft = true
+
+[changelog]
+header = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
