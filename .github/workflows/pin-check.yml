@@ -1,0 +1,44 @@
+# ===================================================================
+# Pin Check — fails PRs that introduce tag-pinned GitHub Actions.
+#
+# Defense-in-depth against action-tag force-push attacks
+# (e.g., aquasecurity/trivy-action, March 2026).
+#
+# Note: runs on every PR (not just workflow-touching ones) so it can
+# serve as a required status check without hanging unrelated PRs.
+# ===================================================================
+name: Pin Check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pinact:
+    name: Verify all actions pinned by SHA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify all actions pinned by SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Find every `uses: owner/repo@ref` (excluding local `./` and docker:// refs)
+          # and fail if ref isn't a 40-char lowercase hex SHA. Inline commit comments
+          # like `# v1.2.3` are preserved by GitHub's parser and ignored here.
+          violations=$(grep -rHnE '^\s*-?\s*uses:\s*[^./@[:space:]][^@[:space:]]*@[^[:space:]#]+' .github/ \
+            | grep -vE '@[0-9a-f]{40}([[:space:]]|#|$)' || true)
+          if [ -n "$violations" ]; then
+            echo "::error::Actions must be pinned by 40-char commit SHA, not tag/branch:"
+            echo "$violations"
+            exit 1
+          fi
+          echo "All actions SHA-pinned."
