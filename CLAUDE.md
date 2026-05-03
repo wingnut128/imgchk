@@ -62,3 +62,17 @@ cargo test
 - File tree is built by reading tar headers from each layer, not by extracting to disk
 - Whiteout semantics (`.wh.*` files, opaque dirs) are handled during tree merge for cumulative view
 - The TUI is the primary interface; all extraction feedback (counts, paths) is shown in the status bar
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in Linear (team `ENG`) via the Linear MCP. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults — no remapping. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` and `docs/adr/` at repo root. See `docs/agents/domain.md`.
