@@ -12,6 +12,7 @@ use ratatui::widgets::*;
 
 use crate::extract::{self, OutputFormat};
 use crate::image::ImageInfo;
+use crate::selection::{DirStatus, Selection};
 use crate::tree::{self, FileNode, FileTree};
 
 // ── Pane focus ──────────────────────────────────────────────────────────────
@@ -60,9 +61,7 @@ pub struct App {
     cached_tree: FileTree,
     file_rows: Vec<TreeRow>,
     file_index: usize,
-    selected_files: HashSet<String>,
-    /// Pre-computed per-directory selection state: (all_selected, some_selected)
-    dir_selection: std::collections::HashMap<String, (bool, bool)>,
+    selection: Selection,
 
     // Output
     output_dir: Option<PathBuf>,
@@ -90,8 +89,7 @@ impl App {
             cached_tree: FileTree::new(),
             file_rows: Vec::new(),
             file_index: 0,
-            selected_files: HashSet::new(),
-            dir_selection: std::collections::HashMap::new(),
+            selection: Selection::new(),
             output_dir,
             output_format: OutputFormat::TarGz,
             detail_scroll: 0,
@@ -122,30 +120,6 @@ impl App {
         self.file_rows = rows;
         if self.file_index >= self.file_rows.len() {
             self.file_index = self.file_rows.len().saturating_sub(1);
-        }
-        self.rebuild_dir_selection();
-    }
-
-    fn rebuild_dir_selection(&mut self) {
-        self.dir_selection.clear();
-        self.compute_dir_selection(&self.cached_tree.root.clone());
-    }
-
-    fn compute_dir_selection(&mut self, node: &FileNode) {
-        for child in node.children.values() {
-            if child.is_dir {
-                let paths = tree::collect_paths(child);
-                if !paths.is_empty() {
-                    let sel = paths
-                        .iter()
-                        .filter(|p| self.selected_files.contains(*p))
-                        .count();
-                    let all = sel == paths.len();
-                    let some = sel > 0 && !all;
-                    self.dir_selection.insert(child.path.clone(), (all, some));
-                }
-                self.compute_dir_selection(child);
-            }
         }
     }
 
@@ -256,7 +230,7 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                 }
                 KeyCode::Char('t') => {
                     app.cumulative = !app.cumulative;
-                    app.selected_files.clear();
+                    app.selection.clear();
                     app.rebuild_file_rows();
                     app.status = if app.cumulative {
                         "Cumulative view".into()
@@ -277,7 +251,7 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     Pane::Layers => {
                         if app.layer_index < app.image.layers.len().saturating_sub(1) {
                             app.layer_index += 1;
-                            app.selected_files.clear();
+                            app.selection.clear();
                             app.detail_scroll = 0;
                             app.rebuild_file_rows();
                         }
@@ -295,7 +269,7 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     Pane::Layers => {
                         if app.layer_index > 0 {
                             app.layer_index -= 1;
-                            app.selected_files.clear();
+                            app.selection.clear();
                             app.detail_scroll = 0;
                             app.rebuild_file_rows();
                         }
@@ -326,26 +300,10 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     if let Some(row) = app.file_rows.get(app.file_index) {
                         let path = row.path.clone();
                         if row.is_dir {
-                            if let Some(node) = find_node(&app.cached_tree.root, &path) {
-                                let paths = tree::collect_paths(node);
-                                let all_selected =
-                                    paths.iter().all(|p| app.selected_files.contains(p));
-                                if all_selected {
-                                    for p in paths {
-                                        app.selected_files.remove(&p);
-                                    }
-                                } else {
-                                    for p in paths {
-                                        app.selected_files.insert(p);
-                                    }
-                                }
-                            }
-                        } else if app.selected_files.contains(&path) {
-                            app.selected_files.remove(&path);
+                            app.selection.toggle_under(&path, &app.cached_tree);
                         } else {
-                            app.selected_files.insert(path);
+                            app.selection.toggle_file(&path, &app.cached_tree);
                         }
-                        app.rebuild_dir_selection();
                     }
                 }
                 KeyCode::Char('a') if app.focus == Pane::Layers => {
@@ -401,12 +359,12 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                     }
                     Pane::Files => {
                         let dir = app.ensure_output_dir();
-                        let paths: Vec<String> = if app.selected_files.is_empty() {
-                            tree::collect_paths(&app.cached_tree.root)
+                        let paths: Vec<String> = if app.selection.is_empty() {
+                            app.cached_tree.all_paths()
                         } else {
-                            app.selected_files.iter().cloned().collect()
+                            app.selection.paths().iter().cloned().collect()
                         };
-                        let label = if app.selected_files.is_empty() {
+                        let label = if app.selection.is_empty() {
                             "all"
                         } else {
                             "selected"
@@ -420,7 +378,11 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
                                     label,
                                     dir.display()
                                 );
-                                app.selected_files.clear();
+                                // TODO: revisit whether selection should
+                                // survive extraction so users can re-extract
+                                // with a different format. Today's behavior
+                                // matches the pre-refactor code.
+                                app.selection.clear();
                             }
                             Err(e) => {
                                 app.status = format!("Extract error: {}", e);
@@ -437,18 +399,6 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
     disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
     Ok(())
-}
-
-fn find_node<'a>(node: &'a FileNode, path: &str) -> Option<&'a FileNode> {
-    if node.path == path {
-        return Some(node);
-    }
-    for child in node.children.values() {
-        if let Some(found) = find_node(child, path) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 // ── Drawing ─────────────────────────────────────────────────────────────────
@@ -565,12 +515,13 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
             };
 
             let (is_selected, is_partial) = if row.is_dir {
-                app.dir_selection
-                    .get(&row.path)
-                    .copied()
-                    .unwrap_or((false, false))
+                match app.selection.dir_status(&row.path) {
+                    DirStatus::All => (true, false),
+                    DirStatus::Partial => (false, true),
+                    DirStatus::None => (false, false),
+                }
             } else {
-                (app.selected_files.contains(&row.path), false)
+                (app.selection.contains(&row.path), false)
             };
 
             let suffix = if let Some(ref target) = row.link_target {
