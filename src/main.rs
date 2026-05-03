@@ -1,6 +1,7 @@
 mod cache;
 mod extract;
 mod image;
+mod selection;
 mod tree;
 mod ui;
 
