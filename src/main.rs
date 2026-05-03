@@ -1,9 +1,13 @@
+mod action;
 mod cache;
+mod command_format;
 mod extract;
 mod image;
 mod selection;
 mod tree;
 mod ui;
+mod update;
+mod view;
 
 use std::path::PathBuf;
 
