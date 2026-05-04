@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+/// Default max cache size: 10 GB.
+const DEFAULT_MAX_CACHE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+
 /// Persistent storage for compressed image-layer blobs, keyed by digest.
 ///
 /// Implementations are best-effort caches: callers must always be able to
@@ -21,7 +24,7 @@ pub trait BlobStore: Send + Sync {
 }
 
 /// Filesystem-backed blob store rooted under `~/.cache/imgchk/blobs/`
-/// (or `IMGCHK_CACHE_DIR`).
+/// (or `$IMGCHK_CACHE_DIR`).
 pub struct FsBlobStore {
     root: PathBuf,
 }
@@ -29,7 +32,7 @@ pub struct FsBlobStore {
 impl FsBlobStore {
     pub fn new() -> Self {
         Self {
-            root: crate::cache::cache_dir(),
+            root: default_cache_dir(),
         }
     }
 }
@@ -58,7 +61,7 @@ impl BlobStore for FsBlobStore {
         if !hit {
             return false;
         }
-        crate::cache::touch(&cache_path);
+        touch(&cache_path);
         std::fs::copy(&cache_path, dest).is_ok()
     }
 
@@ -74,10 +77,132 @@ impl BlobStore for FsBlobStore {
     }
 
     fn ensure_capacity(&self, total_bytes: u64) -> bool {
-        let has_space = crate::cache::has_disk_space(&self.root, total_bytes);
-        crate::cache::evict_if_needed(&self.root);
+        let has_space = has_disk_space(&self.root, total_bytes);
+        evict_if_needed(&self.root);
         has_space
     }
+}
+
+// ── Filesystem helpers (formerly src/cache.rs) ─────────────────────────────
+
+fn default_cache_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("IMGCHK_CACHE_DIR") {
+        PathBuf::from(dir)
+    } else {
+        super::home_dir()
+            .map(|h| h.join(".cache").join("imgchk").join("blobs"))
+            .unwrap_or_else(|| PathBuf::from(".cache/imgchk/blobs"))
+    }
+}
+
+fn max_cache_bytes() -> u64 {
+    std::env::var("IMGCHK_CACHE_MAX_MB")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(|mb| mb * 1024 * 1024)
+        .unwrap_or(DEFAULT_MAX_CACHE_BYTES)
+}
+
+/// Whether the filesystem containing `path` reports more than `needed_bytes`
+/// of free space. Returns `false` when space cannot be determined.
+fn has_disk_space(path: &Path, needed_bytes: u64) -> bool {
+    available_space(path).is_some_and(|avail| avail > needed_bytes)
+}
+
+fn available_space(path: &Path) -> Option<u64> {
+    let mut check = path.to_path_buf();
+    while !check.exists() {
+        if !check.pop() {
+            return None;
+        }
+    }
+
+    let output = std::process::Command::new("df")
+        .arg("-k")
+        .arg(&check)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.lines().nth(1)?;
+    let avail_kb: u64 = line.split_whitespace().nth(3)?.parse().ok()?;
+    Some(avail_kb * 1024)
+}
+
+/// Evict oldest blobs (by access time) until the cache is under the
+/// configured byte limit.
+fn evict_if_needed(cache_dir: &Path) {
+    let max_bytes = max_cache_bytes();
+    if max_bytes == 0 {
+        return;
+    }
+
+    let entries = match collect_cache_entries(cache_dir) {
+        Some(e) => e,
+        None => return,
+    };
+
+    let total: u64 = entries.iter().map(|e| e.size).sum();
+    if total <= max_bytes {
+        return;
+    }
+
+    let mut sorted = entries;
+    sorted.sort_by_key(|e| e.accessed);
+
+    let mut current = total;
+    for entry in &sorted {
+        if current <= max_bytes {
+            break;
+        }
+        if std::fs::remove_file(&entry.path).is_ok() {
+            current = current.saturating_sub(entry.size);
+            eprintln!(
+                "Cache evicted: {} ({})",
+                entry.path.file_name().unwrap_or_default().to_string_lossy(),
+                crate::tree::human_size(entry.size),
+            );
+        }
+    }
+}
+
+struct CacheEntry {
+    path: PathBuf,
+    size: u64,
+    accessed: std::time::SystemTime,
+}
+
+fn collect_cache_entries(cache_dir: &Path) -> Option<Vec<CacheEntry>> {
+    let dir = std::fs::read_dir(cache_dir).ok()?;
+    let mut entries = Vec::new();
+
+    for entry in dir.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if path.extension().is_some_and(|e| e == "tmp") {
+            continue;
+        }
+        if let Ok(meta) = path.metadata() {
+            entries.push(CacheEntry {
+                path,
+                size: meta.len(),
+                accessed: meta.accessed().unwrap_or(std::time::UNIX_EPOCH),
+            });
+        }
+    }
+
+    Some(entries)
+}
+
+/// Bump a cache file's access time so LRU eviction sees it as recent.
+fn touch(path: &Path) {
+    let _ = std::fs::File::open(path);
 }
 
 #[cfg(test)]
@@ -130,5 +255,50 @@ mod tests {
         t.store.store("sha256:empty", b"");
         // Zero-sized entries are rejected to avoid false hits on missing files.
         assert!(!t.store.try_copy_cached("sha256:empty", 0, &dest));
+    }
+
+    /// Serializes tests that mutate the process environment.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn default_cache_dir_uses_env_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("IMGCHK_CACHE_DIR", "/tmp/imgchk-test-override");
+        }
+        let dir = default_cache_dir();
+        unsafe {
+            std::env::remove_var("IMGCHK_CACHE_DIR");
+        }
+        assert_eq!(dir, PathBuf::from("/tmp/imgchk-test-override"));
+    }
+
+    #[test]
+    fn max_cache_bytes_uses_default_when_unset() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::remove_var("IMGCHK_CACHE_MAX_MB");
+        }
+        assert_eq!(max_cache_bytes(), DEFAULT_MAX_CACHE_BYTES);
+    }
+
+    #[test]
+    fn max_cache_bytes_respects_env_in_mb() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe {
+            std::env::set_var("IMGCHK_CACHE_MAX_MB", "5");
+        }
+        let bytes = max_cache_bytes();
+        unsafe {
+            std::env::remove_var("IMGCHK_CACHE_MAX_MB");
+        }
+        assert_eq!(bytes, 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn ensure_capacity_does_not_panic_on_empty_dir() {
+        let t = temp_store();
+        // Empty dir — total is 0, well under any limit.
+        let _ = t.store.ensure_capacity(1024);
     }
 }
