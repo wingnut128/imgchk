@@ -1,11 +1,20 @@
 [workspace]
 # Binary-only project; don't publish to crates.io.
+#
+# Manual-bump workflow: release-plz does NOT auto-bump the version from
+# conventional commits when publish=false (its bump path requires a registry
+# lookup which is skipped in this mode). To cut a release, hand-edit
+# Cargo.toml + Cargo.lock + CHANGELOG.md and commit `chore: release vX.Y.Z`.
+# release-plz then creates the tag, opens a draft GitHub Release, and
+# release.yml attaches binaries + un-drafts. Only the bump decision is manual.
 publish = false
 # Keep the GitHub Release + tag creation — release.yml builds and
 # uploads binaries on tag push.
 git_release_enable = true
 git_tag_enable = true
 # Keep the changelog in the repo, generated from conventional commits.
+# Don't maintain a `## [Unreleased]` block by hand — release-plz inserts its
+# own version sections; doing both fights itself.
 changelog_update = true
 # The binary-upload workflow triggers on tag push; create release as
 # draft so it isn't public until the binaries are attached.
