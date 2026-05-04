@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-04
+
+### Changed
+- Decomposed `src/extract.rs` into `path_safety` / `selector::FileSelector` / `writer::OutputWriter` modules. Orchestration now flows through `extract_with(layer, &dyn FileSelector, Box<dyn OutputWriter>)`; `DirWriter`, `TarWriter`, and `TarGzWriter` each ship with round-trip smoke tests.
+- Decomposed `src/image.rs` into `ImageSource` / `CredentialResolver` / `BlobStore`; folded `cache.rs` into `image/blobs.rs` as private helpers.
+- Decomposed the flat `App` struct into `NavState` / `OutputState` / `ModalState`.
+- Split `ui.rs` into `input` / `update` / `view` modules.
+- Extracted a dedicated `Selection` module and moved tree-navigation methods onto it.
+
+### Security
+- `path_safety::safe_path` is now a named, public predicate that returns a validated `SafePath { absolute, relative }`. It drops `..` / `.` components, normalizes backslash separators, and rejects empty inputs, root-only paths, and Windows drive letters. 14 unit tests exercise the corners.
+
+### CI
+- New `pin-check` workflow enforces SHA-pinning of third-party actions on PRs.
+- Dependabot now groups cargo minor + patch updates into a single PR.
+- PRs that touch no code report success on the gating job instead of stalling.
+- Action pin bumps: `step-security/harden-runner` 2.19.0 → 2.19.1, `github/codeql-action` 4.35.2 → 4.35.3, `taiki-e/install-action` 2.75.19 → 2.75.29.
+
+### Tooling
+- Adopted [release-plz](https://release-plz.dev) for version/CHANGELOG automation. Releases are now driven by conventional-commit messages on `main`.
+
 ## [0.2.2]
 
 ### Changed
