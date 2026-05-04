@@ -113,12 +113,13 @@ pub fn export_ocirender_single(layer: &LayerInfo, spec: ImageSpec) -> anyhow::Re
 
 /// Walk a layer's tar entries, applying `selector` and the path-safety
 /// predicate, and route matches to `writer`. Returns the count actually
-/// written.
+/// written and the paths the writer produced (one archive path for
+/// archive writers; the loose-file list for `DirWriter`).
 pub fn extract_with(
     layer: &LayerInfo,
     selector: &dyn FileSelector,
     mut writer: Box<dyn OutputWriter>,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<(usize, Vec<PathBuf>)> {
     let file = std::fs::File::open(&layer.blob_path)
         .with_context(|| format!("opening layer blob: {}", layer.blob_path.display()))?;
 
@@ -131,7 +132,7 @@ pub fn extract_with(
     };
 
     let mut archive = tar::Archive::new(reader);
-    let mut count = 0;
+    let mut count: usize = 0;
 
     for entry in archive.entries()? {
         let mut entry = entry?;
@@ -149,8 +150,8 @@ pub fn extract_with(
         count += 1;
     }
 
-    let _ = writer.finish()?;
-    Ok(count)
+    let outputs = writer.finish()?;
+    Ok((count, outputs))
 }
 
 /// Build the appropriate [`OutputWriter`] for `format`. The `base_name`
@@ -180,31 +181,17 @@ pub fn writer_for_format(
     }
 }
 
-/// Path the writer for `format` will produce inside `output_dir` for a
-/// selective-extract run. Returns the archive path for `Tar`/`TarGz`, the
-/// directory itself for `Dir`, and `None` for `Squashfs` (unsupported here).
-pub fn extract_output_path(
-    format: OutputFormat,
-    output_dir: &Path,
-    base_name: &str,
-) -> Option<PathBuf> {
-    match format {
-        OutputFormat::Dir => Some(output_dir.to_path_buf()),
-        OutputFormat::Tar => Some(output_dir.join(format!("{base_name}.tar"))),
-        OutputFormat::TarGz => Some(output_dir.join(format!("{base_name}.tar.gz"))),
-        OutputFormat::Squashfs => None,
-    }
-}
-
 /// Extract a selected set of paths from a layer's blob using the given
-/// output format. Compatibility wrapper over [`extract_with`].
+/// output format. Returns the entry count and the paths the writer
+/// produced (one archive path for `Tar`/`TarGz`; the loose-file list
+/// for `Dir`). Compatibility wrapper over [`extract_with`].
 pub fn extract_files(
     layer: &LayerInfo,
     selected_paths: &[String],
     output_dir: &Path,
     format: OutputFormat,
     base_name: &str,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<(usize, Vec<PathBuf>)> {
     let selector = SelectedSet::new(selected_paths.iter().cloned());
     let writer = writer_for_format(format, output_dir, base_name)?;
     extract_with(layer, &selector, writer)
