@@ -8,7 +8,14 @@ use flate2::write::GzEncoder;
 use ocirender::{ImageSpec, LayerMeta, StreamingPacker};
 
 use crate::image::LayerInfo;
-use crate::tree;
+
+mod path_safety;
+mod selector;
+mod writer;
+
+pub use path_safety::safe_path;
+pub use selector::{FileSelector, SelectedSet};
+pub use writer::{DirWriter, OutputWriter, TarGzWriter, TarWriter};
 
 // ── Output format ───────────────────────────────────────────────────────────
 
@@ -104,12 +111,13 @@ pub fn export_ocirender_single(layer: &LayerInfo, spec: ImageSpec) -> anyhow::Re
     Ok(output_path)
 }
 
-/// Extract specific files from a layer's blob to an output directory.
-/// Returns the number of files extracted.
-pub fn extract_files(
+/// Walk a layer's tar entries, applying `selector` and the path-safety
+/// predicate, and route matches to `writer`. Returns the count actually
+/// written.
+pub fn extract_with(
     layer: &LayerInfo,
-    selected_paths: &[String],
-    output_dir: &Path,
+    selector: &dyn FileSelector,
+    mut writer: Box<dyn OutputWriter>,
 ) -> anyhow::Result<usize> {
     let file = std::fs::File::open(&layer.blob_path)
         .with_context(|| format!("opening layer blob: {}", layer.blob_path.display()))?;
@@ -125,39 +133,65 @@ pub fn extract_files(
     let mut archive = tar::Archive::new(reader);
     let mut count = 0;
 
-    let selected_set: std::collections::HashSet<&str> =
-        selected_paths.iter().map(|s| s.as_str()).collect();
-
-    std::fs::create_dir_all(output_dir)?;
-    let canonical_out =
-        std::fs::canonicalize(output_dir).unwrap_or_else(|_| output_dir.to_path_buf());
-
     for entry in archive.entries()? {
         let mut entry = entry?;
         let raw_path = entry.path()?.to_string_lossy().to_string();
-        let normalized = tree::normalize_path(&raw_path);
 
-        if !selected_set.contains(normalized.as_str()) {
+        let Some(safe) = safe_path(&raw_path) else {
+            continue;
+        };
+        if !selector.matches(&safe.absolute) {
             continue;
         }
 
-        let dest = output_dir.join(normalized.trim_start_matches('/'));
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let canonical_dest = std::fs::canonicalize(dest.parent().unwrap_or(output_dir))
-            .unwrap_or_else(|_| output_dir.to_path_buf())
-            .join(dest.file_name().unwrap_or_default());
-        if !canonical_dest.starts_with(&canonical_out) {
-            continue;
-        }
-
-        let mut out = std::fs::File::create(&dest)?;
-        std::io::copy(&mut entry, &mut out)?;
+        let header = entry.header().clone();
+        writer.write_entry(&safe, &header, &mut entry)?;
         count += 1;
     }
 
+    let _ = writer.finish()?;
     Ok(count)
+}
+
+/// Build the appropriate [`OutputWriter`] for `format`. The `base_name`
+/// is used to derive archive filenames; ignored for [`OutputFormat::Dir`]
+/// which writes loose files directly under `output_dir`.
+///
+/// [`OutputFormat::Squashfs`] is not supported for selective extraction
+/// (partial-selection squashfs needs external `mksquashfs`); callers
+/// should fall back to a different format or use the whole-layer
+/// `export_ocirender*` path.
+pub fn writer_for_format(
+    format: OutputFormat,
+    output_dir: &Path,
+    base_name: &str,
+) -> anyhow::Result<Box<dyn OutputWriter>> {
+    match format {
+        OutputFormat::Dir => Ok(Box::new(DirWriter::new(output_dir)?)),
+        OutputFormat::Tar => Ok(Box::new(TarWriter::new(
+            output_dir.join(format!("{base_name}.tar")),
+        )?)),
+        OutputFormat::TarGz => Ok(Box::new(TarGzWriter::new(
+            output_dir.join(format!("{base_name}.tar.gz")),
+        )?)),
+        OutputFormat::Squashfs => {
+            anyhow::bail!("squashfs not yet supported for selective extraction")
+        }
+    }
+}
+
+/// Extract a selected set of paths from a layer's blob using the given
+/// output format. Compatibility wrapper over [`extract_with`].
+pub fn extract_files(
+    layer: &LayerInfo,
+    selected_paths: &[String],
+    output_dir: &Path,
+    format: OutputFormat,
+    base_name: &str,
+) -> anyhow::Result<usize> {
+    let selector = SelectedSet::new(selected_paths.iter().cloned());
+    let writer = writer_for_format(format, output_dir, base_name)?;
+    extract_with(layer, &selector, writer)
 }
 
 /// Export a layer as a tar.gz file in the output directory.
@@ -170,10 +204,8 @@ pub fn export_layer(layer: &LayerInfo, output_dir: &Path) -> anyhow::Result<Path
 
     // Check if already gzipped by looking for magic bytes
     if blob_data.len() >= 2 && blob_data[0] == 0x1f && blob_data[1] == 0x8b {
-        // Already gzipped, just copy
         std::fs::write(&dest, &blob_data)?;
     } else {
-        // Compress as gzip
         let out = std::fs::File::create(&dest)?;
         let mut encoder = GzEncoder::new(out, Compression::default());
         std::io::copy(&mut std::io::Cursor::new(&blob_data), &mut encoder)?;
