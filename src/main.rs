@@ -1,5 +1,4 @@
 mod action;
-mod cache;
 mod command_format;
 mod extract;
 mod image;
