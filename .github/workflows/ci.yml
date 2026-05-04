@@ -37,10 +37,14 @@ jobs:
               - "Cargo.lock"
               - ".github/workflows/ci.yml"
 
+  # The conditional jobs below use step-level `if:` rather than job-level
+  # so they always report SUCCESS to branch protection, even on PRs that
+  # don't touch code. Job-level `if:` produces SKIPPED, which branch
+  # protection treats as not-passing.
+
   lint:
     name: Format & Lint
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -48,11 +52,18 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Skip — no code changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code changes detected; skipping lint."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        if: needs.changes.outputs.code == 'true'
         with:
           components: rustfmt, clippy
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        if: needs.changes.outputs.code == 'true'
         with:
           path: |
             ~/.cargo/registry/
@@ -60,13 +71,14 @@ jobs:
             target/
           key: lint-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: lint-${{ runner.os }}-
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - if: needs.changes.outputs.code == 'true'
+        run: cargo fmt --all -- --check
+      - if: needs.changes.outputs.code == 'true'
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -74,12 +86,20 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Skip — no code changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code changes detected; skipping tests."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        if: needs.changes.outputs.code == 'true'
       - uses: taiki-e/install-action@b5fddbb5361bce8a06fb168c9d403a6cc552b084 # v2.75.29
+        if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-nextest
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        if: needs.changes.outputs.code == 'true'
         with:
           path: |
             ~/.cargo/registry/
@@ -87,12 +107,12 @@ jobs:
             target/
           key: test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: test-${{ runner.os }}-
-      - run: cargo nextest run --no-tests=pass
+      - if: needs.changes.outputs.code == 'true'
+        run: cargo nextest run --no-tests=pass
 
   audit:
     name: Security Audit
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -100,16 +120,22 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Skip — no code changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code changes detected; skipping audit."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.code == 'true'
       - uses: taiki-e/install-action@b5fddbb5361bce8a06fb168c9d403a6cc552b084 # v2.75.29
+        if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-audit
-      - run: cargo audit
+      - if: needs.changes.outputs.code == 'true'
+        run: cargo audit
 
   build:
     name: Build (${{ matrix.target }})
     needs: changes
-    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -126,11 +152,18 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Skip — no code changes
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code changes detected; skipping build for ${{ matrix.target }}."
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        if: needs.changes.outputs.code == 'true'
         with:
           targets: ${{ matrix.target }}
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        if: needs.changes.outputs.code == 'true'
         with:
           path: |
             ~/.cargo/registry/
@@ -138,8 +171,10 @@ jobs:
             target/
           key: build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: build-${{ matrix.target }}-
-      - run: cargo build --release --target ${{ matrix.target }}
+      - if: needs.changes.outputs.code == 'true'
+        run: cargo build --release --target ${{ matrix.target }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: needs.changes.outputs.code == 'true'
         with:
           name: imgchk-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/imgchk
