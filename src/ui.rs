@@ -44,69 +44,47 @@ pub struct TreeRow {
     pub link_target: Option<String>,
 }
 
-pub struct App {
-    pub image: ImageInfo,
-    pub focus: Pane,
-
+/// Cursor positions, expansion state, and the cached file tree the view
+/// renders. All navigation-related update arms touch only this struct.
+pub struct NavState {
     pub layer_index: usize,
-
+    pub file_index: usize,
+    pub detail_scroll: u16,
     pub cumulative: bool,
     pub expanded_dirs: HashSet<String>,
     pub cached_tree: FileTree,
     pub file_rows: Vec<TreeRow>,
-    pub file_index: usize,
-    pub selection: Selection,
-
-    pub output_dir: Option<PathBuf>,
-    pub output_format: OutputFormat,
-
-    pub detail_scroll: u16,
-
-    pub status: String,
-
-    pub input_mode: bool,
-    pub input_buf: String,
 }
 
-impl App {
-    pub fn new(image: ImageInfo, output_dir: Option<PathBuf>) -> Self {
-        let mut app = App {
-            image,
-            focus: Pane::Layers,
+impl NavState {
+    pub fn new() -> Self {
+        Self {
             layer_index: 0,
+            file_index: 0,
+            detail_scroll: 0,
             cumulative: false,
             expanded_dirs: HashSet::new(),
             cached_tree: FileTree::new(),
             file_rows: Vec::new(),
-            file_index: 0,
-            selection: Selection::new(),
-            output_dir,
-            output_format: OutputFormat::TarGz,
-            detail_scroll: 0,
-            status: String::new(),
-            input_mode: false,
-            input_buf: String::new(),
-        };
-        app.rebuild_file_rows();
-        app
+        }
     }
 
-    fn rebuild_tree(&mut self) {
+    /// Rebuild [`Self::cached_tree`] and [`Self::file_rows`] from the
+    /// current `layer_index` / `cumulative` state against the layers in
+    /// `image`. Clamps `file_index` if the new row count is shorter.
+    pub fn rebuild_file_rows(&mut self, image: &ImageInfo) {
         self.cached_tree = if self.cumulative {
-            let trees: Vec<FileTree> = self.image.layers[..=self.layer_index]
+            let trees: Vec<FileTree> = image.layers[..=self.layer_index]
                 .iter()
                 .map(|l| l.file_tree.clone())
                 .collect();
             tree::merge_trees(&trees)
-        } else if self.image.layers.is_empty() {
+        } else if image.layers.is_empty() {
             FileTree::new()
         } else {
-            self.image.layers[self.layer_index].file_tree.clone()
+            image.layers[self.layer_index].file_tree.clone()
         };
-    }
 
-    pub fn rebuild_file_rows(&mut self) {
-        self.rebuild_tree();
         let mut rows = Vec::new();
         flatten_node(&self.cached_tree.root, 0, &self.expanded_dirs, &mut rows);
         self.file_rows = rows;
@@ -114,18 +92,86 @@ impl App {
             self.file_index = self.file_rows.len().saturating_sub(1);
         }
     }
+}
 
-    pub fn ensure_output_dir(&mut self) -> PathBuf {
-        if let Some(ref dir) = self.output_dir {
+/// Output-directory choice, archive format, and the user-visible status
+/// line. All extraction-result / format-cycle arms touch only this struct.
+pub struct OutputState {
+    pub dir: Option<PathBuf>,
+    pub format: OutputFormat,
+    pub status: String,
+}
+
+impl OutputState {
+    pub fn new(dir: Option<PathBuf>) -> Self {
+        Self {
+            dir,
+            format: OutputFormat::TarGz,
+            status: String::new(),
+        }
+    }
+
+    /// Return an output directory, lazily creating a tmpdir on first use
+    /// and recording its path in `status` so the user can see where
+    /// extractions land.
+    pub fn ensure_dir(&mut self) -> PathBuf {
+        if let Some(ref dir) = self.dir {
             let _ = std::fs::create_dir_all(dir);
             dir.clone()
         } else {
             let tmp = tempfile::tempdir().expect("create tmpdir");
             let path = tmp.keep();
             self.status = format!("Output: {}", path.display());
-            self.output_dir = Some(path.clone());
+            self.dir = Some(path.clone());
             path
         }
+    }
+}
+
+/// Modal text-input state for the "set output dir" prompt.
+pub struct ModalState {
+    pub active: bool,
+    pub buffer: String,
+}
+
+impl ModalState {
+    pub fn new() -> Self {
+        Self {
+            active: false,
+            buffer: String::new(),
+        }
+    }
+}
+
+pub struct App {
+    pub image: ImageInfo,
+    pub focus: Pane,
+    pub nav: NavState,
+    pub selection: Selection,
+    pub output: OutputState,
+    pub modal: ModalState,
+}
+
+impl App {
+    pub fn new(image: ImageInfo, output_dir: Option<PathBuf>) -> Self {
+        let mut app = App {
+            image,
+            focus: Pane::Layers,
+            nav: NavState::new(),
+            selection: Selection::new(),
+            output: OutputState::new(output_dir),
+            modal: ModalState::new(),
+        };
+        app.rebuild_file_rows();
+        app
+    }
+
+    pub fn rebuild_file_rows(&mut self) {
+        self.nav.rebuild_file_rows(&self.image);
+    }
+
+    pub fn ensure_output_dir(&mut self) -> PathBuf {
+        self.output.ensure_dir()
     }
 }
 
@@ -169,7 +215,7 @@ pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> 
 
         if let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
-            && let Some(action) = key_to_action(app.input_mode, app.focus, key.code)
+            && let Some(action) = key_to_action(app.modal.active, app.focus, key.code)
             && update(&mut app, action).is_break()
         {
             break;
