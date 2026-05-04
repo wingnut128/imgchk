@@ -3,29 +3,29 @@ use std::io;
 use std::path::PathBuf;
 
 use crossterm::ExecutableCommand;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::prelude::*;
-use ratatui::widgets::*;
 
-use crate::extract::{self, OutputFormat};
+use crate::action::key_to_action;
+use crate::extract::OutputFormat;
 use crate::image::ImageInfo;
-use crate::selection::{DirStatus, Selection};
+use crate::selection::Selection;
 use crate::tree::{self, FileNode, FileTree};
+use crate::update::update;
+use crate::view;
 
-// ── Pane focus ──────────────────────────────────────────────────────────────
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Pane {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pane {
     Layers,
     Files,
     Details,
 }
 
 impl Pane {
-    fn next(self) -> Self {
+    pub fn next(self) -> Self {
         match self {
             Pane::Layers => Pane::Files,
             Pane::Files => Pane::Details,
@@ -34,48 +34,38 @@ impl Pane {
     }
 }
 
-// ── Flattened tree row ──────────────────────────────────────────────────────
-
-struct TreeRow {
-    depth: usize,
-    name: String,
-    path: String,
-    size: u64,
-    is_dir: bool,
-    expanded: bool,
-    link_target: Option<String>,
+pub struct TreeRow {
+    pub depth: usize,
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub is_dir: bool,
+    pub expanded: bool,
+    pub link_target: Option<String>,
 }
 
-// ── App state ───────────────────────────────────────────────────────────────
-
 pub struct App {
-    image: ImageInfo,
-    focus: Pane,
+    pub image: ImageInfo,
+    pub focus: Pane,
 
-    // Layer list
-    layer_index: usize,
+    pub layer_index: usize,
 
-    // File tree
-    cumulative: bool,
-    expanded_dirs: HashSet<String>,
-    cached_tree: FileTree,
-    file_rows: Vec<TreeRow>,
-    file_index: usize,
-    selection: Selection,
+    pub cumulative: bool,
+    pub expanded_dirs: HashSet<String>,
+    pub cached_tree: FileTree,
+    pub file_rows: Vec<TreeRow>,
+    pub file_index: usize,
+    pub selection: Selection,
 
-    // Output
-    output_dir: Option<PathBuf>,
-    output_format: OutputFormat,
+    pub output_dir: Option<PathBuf>,
+    pub output_format: OutputFormat,
 
-    // Details pane scroll
-    detail_scroll: u16,
+    pub detail_scroll: u16,
 
-    // Status bar message
-    status: String,
+    pub status: String,
 
-    // Set output mode (typing in status bar)
-    input_mode: bool,
-    input_buf: String,
+    pub input_mode: bool,
+    pub input_buf: String,
 }
 
 impl App {
@@ -108,12 +98,14 @@ impl App {
                 .map(|l| l.file_tree.clone())
                 .collect();
             tree::merge_trees(&trees)
+        } else if self.image.layers.is_empty() {
+            FileTree::new()
         } else {
             self.image.layers[self.layer_index].file_tree.clone()
         };
     }
 
-    fn rebuild_file_rows(&mut self) {
+    pub fn rebuild_file_rows(&mut self) {
         self.rebuild_tree();
         let mut rows = Vec::new();
         flatten_node(&self.cached_tree.root, 0, &self.expanded_dirs, &mut rows);
@@ -123,7 +115,7 @@ impl App {
         }
     }
 
-    fn ensure_output_dir(&mut self) -> PathBuf {
+    pub fn ensure_output_dir(&mut self) -> PathBuf {
         if let Some(ref dir) = self.output_dir {
             let _ = std::fs::create_dir_all(dir);
             dir.clone()
@@ -143,7 +135,6 @@ fn flatten_node(
     expanded: &HashSet<String>,
     rows: &mut Vec<TreeRow>,
 ) {
-    // Sort: dirs first, then by name
     let mut children: Vec<&FileNode> = node.children.values().collect();
     children.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
 
@@ -165,696 +156,27 @@ fn flatten_node(
     }
 }
 
-// ── Run loop ────────────────────────────────────────────────────────────────
-
 pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> {
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
-
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(image, output_dir);
 
     loop {
-        terminal.draw(|f| draw(f, &app))?;
+        terminal.draw(|f| view::draw(f, &app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-
-            // Input mode for setting output dir
-            if app.input_mode {
-                match key.code {
-                    KeyCode::Enter => {
-                        let path = PathBuf::from(app.input_buf.trim());
-                        if !app.input_buf.trim().is_empty() {
-                            app.output_dir = Some(path.clone());
-                            app.status = format!("Output: {}", path.display());
-                        }
-                        app.input_mode = false;
-                        app.input_buf.clear();
-                    }
-                    KeyCode::Esc => {
-                        app.input_mode = false;
-                        app.input_buf.clear();
-                    }
-                    KeyCode::Backspace => {
-                        app.input_buf.pop();
-                    }
-                    KeyCode::Char(c) => {
-                        app.input_buf.push(c);
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-
-            // Clear transient status on any navigation
-            match key.code {
-                KeyCode::Char('j' | 'k')
-                | KeyCode::Up
-                | KeyCode::Down
-                | KeyCode::Tab
-                | KeyCode::Enter => {
-                    app.status.clear();
-                }
-                _ => {}
-            }
-
-            match key.code {
-                KeyCode::Char('q') => break,
-                KeyCode::Tab => {
-                    app.focus = app.focus.next();
-                }
-                KeyCode::Char('t') => {
-                    app.cumulative = !app.cumulative;
-                    app.selection.clear();
-                    app.rebuild_file_rows();
-                    app.status = if app.cumulative {
-                        "Cumulative view".into()
-                    } else {
-                        "Layer view".into()
-                    };
-                }
-                KeyCode::Char('f') => {
-                    app.output_format = app.output_format.next();
-                    app.status = format!("Export format: {}", app.output_format.label());
-                }
-                KeyCode::Char('o') => {
-                    app.input_mode = true;
-                    app.input_buf.clear();
-                    app.status = "Enter output directory:".into();
-                }
-                KeyCode::Char('j') | KeyCode::Down => match app.focus {
-                    Pane::Layers => {
-                        if app.layer_index < app.image.layers.len().saturating_sub(1) {
-                            app.layer_index += 1;
-                            app.selection.clear();
-                            app.detail_scroll = 0;
-                            app.rebuild_file_rows();
-                        }
-                    }
-                    Pane::Files => {
-                        if app.file_index < app.file_rows.len().saturating_sub(1) {
-                            app.file_index += 1;
-                        }
-                    }
-                    Pane::Details => {
-                        app.detail_scroll = app.detail_scroll.saturating_add(1);
-                    }
-                },
-                KeyCode::Char('k') | KeyCode::Up => match app.focus {
-                    Pane::Layers => {
-                        if app.layer_index > 0 {
-                            app.layer_index -= 1;
-                            app.selection.clear();
-                            app.detail_scroll = 0;
-                            app.rebuild_file_rows();
-                        }
-                    }
-                    Pane::Files => {
-                        if app.file_index > 0 {
-                            app.file_index -= 1;
-                        }
-                    }
-                    Pane::Details => {
-                        app.detail_scroll = app.detail_scroll.saturating_sub(1);
-                    }
-                },
-                KeyCode::Enter if app.focus == Pane::Files => {
-                    if let Some(row) = app.file_rows.get(app.file_index)
-                        && row.is_dir
-                    {
-                        let path = row.path.clone();
-                        if app.expanded_dirs.contains(&path) {
-                            app.expanded_dirs.remove(&path);
-                        } else {
-                            app.expanded_dirs.insert(path);
-                        }
-                        app.rebuild_file_rows();
-                    }
-                }
-                KeyCode::Char(' ') if app.focus == Pane::Files => {
-                    if let Some(row) = app.file_rows.get(app.file_index) {
-                        let path = row.path.clone();
-                        if row.is_dir {
-                            app.selection.toggle_under(&path, &app.cached_tree);
-                        } else {
-                            app.selection.toggle_file(&path, &app.cached_tree);
-                        }
-                    }
-                }
-                KeyCode::Char('a') if app.focus == Pane::Layers => {
-                    let dir = app.ensure_output_dir();
-                    let fmt = app.output_format;
-                    let result = match fmt {
-                        OutputFormat::TarGz => extract::export_all_layers(&app.image.layers, &dir)
-                            .map(|paths| {
-                                format!("Exported {} layers to {}", paths.len(), dir.display())
-                            }),
-                        _ => {
-                            let spec = extract::make_image_spec(fmt, &dir, "image");
-                            extract::export_ocirender(&app.image.layers, spec).map(|path| {
-                                format!(
-                                    "Exported all layers as {} to {}",
-                                    fmt.label(),
-                                    path.display()
-                                )
-                            })
-                        }
-                    };
-                    match result {
-                        Ok(msg) => app.status = msg,
-                        Err(e) => app.status = format!("Export error: {}", e),
-                    }
-                }
-                KeyCode::Char('e') => match app.focus {
-                    Pane::Layers => {
-                        let dir = app.ensure_output_dir();
-                        let fmt = app.output_format;
-                        let layer = &app.image.layers[app.layer_index];
-                        let result = match fmt {
-                            OutputFormat::TarGz => extract::export_layer(layer, &dir).map(|path| {
-                                format!("Exported layer {} to {}", layer.index, path.display())
-                            }),
-                            _ => {
-                                let name = format!("layer-{}", layer.index);
-                                let spec = extract::make_image_spec(fmt, &dir, &name);
-                                extract::export_ocirender_single(layer, spec).map(|path| {
-                                    format!(
-                                        "Exported layer {} as {} to {}",
-                                        layer.index,
-                                        fmt.label(),
-                                        path.display()
-                                    )
-                                })
-                            }
-                        };
-                        match result {
-                            Ok(msg) => app.status = msg,
-                            Err(e) => app.status = format!("Export error: {}", e),
-                        }
-                    }
-                    Pane::Files => {
-                        let dir = app.ensure_output_dir();
-                        let paths: Vec<String> = if app.selection.is_empty() {
-                            app.cached_tree.all_paths()
-                        } else {
-                            app.selection.paths().iter().cloned().collect()
-                        };
-                        let label = if app.selection.is_empty() {
-                            "all"
-                        } else {
-                            "selected"
-                        };
-                        let layer = &app.image.layers[app.layer_index];
-                        match extract::extract_files(layer, &paths, &dir) {
-                            Ok(count) => {
-                                app.status = format!(
-                                    "Extracted {} {} files to {}",
-                                    count,
-                                    label,
-                                    dir.display()
-                                );
-                                // TODO: revisit whether selection should
-                                // survive extraction so users can re-extract
-                                // with a different format. Today's behavior
-                                // matches the pre-refactor code.
-                                app.selection.clear();
-                            }
-                            Err(e) => {
-                                app.status = format!("Extract error: {}", e);
-                            }
-                        }
-                    }
-                    Pane::Details => {}
-                },
-                _ => {}
-            }
+        if let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+            && let Some(action) = key_to_action(app.input_mode, app.focus, key.code)
+            && update(&mut app, action).is_break()
+        {
+            break;
         }
     }
 
     disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
     Ok(())
-}
-
-// ── Drawing ─────────────────────────────────────────────────────────────────
-
-const HIGHLIGHT_STYLE: Style = Style::new()
-    .bg(Color::Rgb(50, 50, 80))
-    .fg(Color::White)
-    .add_modifier(Modifier::BOLD);
-
-fn focused_styles(is_focused: bool) -> (Style, Style) {
-    if is_focused {
-        (
-            Style::default()
-                .fg(Color::LightYellow)
-                .add_modifier(Modifier::BOLD),
-            // Inverted title for clear focus indicator
-            Style::default()
-                .bg(Color::LightYellow)
-                .fg(Color::Black)
-                .add_modifier(Modifier::BOLD),
-        )
-    } else {
-        (
-            Style::default().fg(Color::Gray),
-            Style::default().fg(Color::White),
-        )
-    }
-}
-
-fn draw(f: &mut Frame, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(f.area());
-
-    let main_area = chunks[0];
-    let status_area = chunks[1];
-
-    // Main: left (layers) | right (files + details)
-    let h_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(35), Constraint::Percentage(65)])
-        .split(main_area);
-
-    let right_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(h_chunks[1]);
-
-    draw_layers(f, app, h_chunks[0]);
-    draw_files(f, app, right_chunks[0]);
-    draw_details(f, app, right_chunks[1]);
-    draw_status(f, app, status_area);
-}
-
-fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
-        .image
-        .layers
-        .iter()
-        .map(|l| {
-            let cmd = truncate_command(&l.command, area.width.saturating_sub(20) as usize);
-            let line = format!(" {} │ {:>8} │ {}", l.index, tree::human_size(l.size), cmd);
-            ListItem::new(line)
-        })
-        .collect();
-
-    let title = format!(" Layers ({}) ", app.image.layers.len());
-    let (border_style, title_style) = focused_styles(app.focus == Pane::Layers);
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title_style(title_style)
-                .title(title),
-        )
-        .highlight_style(HIGHLIGHT_STYLE)
-        .highlight_symbol("▸ ");
-
-    let mut state = ListState::default();
-    state.select(Some(app.layer_index));
-    f.render_stateful_widget(list, area, &mut state);
-
-    let mut scrollbar_state = ScrollbarState::new(app.image.layers.len()).position(app.layer_index);
-    f.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .style(Style::default().fg(Color::DarkGray)),
-        area.inner(Margin::new(0, 1)),
-        &mut scrollbar_state,
-    );
-}
-
-fn draw_files(f: &mut Frame, app: &App, area: Rect) {
-    let view_label = if app.cumulative {
-        "cumulative"
-    } else {
-        "layer"
-    };
-    let title = format!(" Files ({}, {}) ", app.file_rows.len(), view_label);
-
-    let (border_style, title_style) = focused_styles(app.focus == Pane::Files);
-
-    let items: Vec<ListItem> = app
-        .file_rows
-        .iter()
-        .map(|row| {
-            let indent = "  ".repeat(row.depth);
-            let icon = if row.is_dir {
-                if row.expanded { "▾ " } else { "▸ " }
-            } else {
-                "  "
-            };
-
-            let (is_selected, is_partial) = if row.is_dir {
-                match app.selection.dir_status(&row.path) {
-                    DirStatus::All => (true, false),
-                    DirStatus::Partial => (false, true),
-                    DirStatus::None => (false, false),
-                }
-            } else {
-                (app.selection.contains(&row.path), false)
-            };
-
-            let suffix = if let Some(ref target) = row.link_target {
-                format!(" -> {}", target)
-            } else if row.is_dir {
-                String::new()
-            } else {
-                format!("  {}", tree::human_size(row.size))
-            };
-
-            let checkbox = if is_selected {
-                Span::styled(
-                    "[✓] ",
-                    Style::default()
-                        .fg(Color::LightGreen)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else if is_partial {
-                Span::styled(
-                    "[~] ",
-                    Style::default()
-                        .fg(Color::LightYellow)
-                        .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                Span::styled("[ ] ", Style::default().fg(Color::Gray))
-            };
-
-            let name_style = if is_selected {
-                Style::default()
-                    .fg(Color::LightGreen)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_partial {
-                Style::default()
-                    .fg(Color::LightYellow)
-                    .add_modifier(Modifier::BOLD)
-            } else if row.is_dir {
-                Style::default()
-                    .fg(Color::LightBlue)
-                    .add_modifier(Modifier::BOLD)
-            } else if row.link_target.is_some() {
-                Style::default().fg(Color::LightCyan)
-            } else {
-                Style::default().fg(Color::White)
-            };
-
-            let line = Line::from(vec![
-                checkbox,
-                Span::raw(format!("{}{}", indent, icon)),
-                Span::styled(&row.name, name_style),
-                Span::styled(suffix, Style::default().fg(Color::Gray)),
-            ]);
-
-            ListItem::new(line)
-        })
-        .collect();
-
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title_style(title_style)
-                .title(title),
-        )
-        .highlight_style(HIGHLIGHT_STYLE)
-        .highlight_symbol("▸ ");
-
-    let mut state = ListState::default();
-    state.select(Some(app.file_index));
-    f.render_stateful_widget(list, area, &mut state);
-
-    let mut scrollbar_state = ScrollbarState::new(app.file_rows.len()).position(app.file_index);
-    f.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .style(Style::default().fg(Color::DarkGray)),
-        area.inner(Margin::new(0, 1)),
-        &mut scrollbar_state,
-    );
-}
-
-fn draw_details(f: &mut Frame, app: &App, area: Rect) {
-    let (border_style, title_style) = focused_styles(app.focus == Pane::Details);
-
-    let layer = &app.image.layers[app.layer_index];
-    let file_count = layer.file_tree.file_count;
-
-    let label_style = Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD);
-    let value_style = Style::default().fg(Color::White);
-    let dim_style = Style::default().fg(Color::Gray);
-
-    // Compact metadata header
-    let mut lines: Vec<Line> = vec![
-        Line::from(vec![
-            Span::styled("Size: ", label_style),
-            Span::styled(tree::human_size(layer.size), value_style),
-            Span::styled("  Files: ", label_style),
-            Span::styled(file_count.to_string(), value_style),
-            Span::styled("  Created: ", label_style),
-            Span::styled(&layer.created, dim_style),
-        ]),
-        Line::from(vec![
-            Span::styled("Digest: ", label_style),
-            Span::styled(&layer.digest, dim_style),
-        ]),
-    ];
-
-    if !layer.diff_id.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled("DiffID: ", label_style),
-            Span::styled(&layer.diff_id, dim_style),
-        ]));
-    }
-
-    // Separator
-    lines.push(Line::from(""));
-
-    // Pretty-print the command
-    let command = clean_command(&layer.command);
-    let cmd_lines = format_command(&command);
-    let keyword_style = Style::default()
-        .fg(Color::LightCyan)
-        .add_modifier(Modifier::BOLD);
-    let op_style = Style::default().fg(Color::Yellow);
-
-    for (i, cmd_line) in cmd_lines.iter().enumerate() {
-        let trimmed = cmd_line.trim();
-        if i == 0 {
-            // First line gets the label
-            let spans = highlight_shell_line(trimmed, keyword_style, op_style, value_style);
-            let mut line_spans = vec![Span::styled("$ ", label_style)];
-            line_spans.extend(spans);
-            lines.push(Line::from(line_spans));
-        } else {
-            let spans = highlight_shell_line(trimmed, keyword_style, op_style, value_style);
-            let mut line_spans = vec![Span::raw("  ")];
-            line_spans.extend(spans);
-            lines.push(Line::from(line_spans));
-        }
-    }
-
-    let total_lines = lines.len();
-
-    let paragraph = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title_style(title_style)
-                .title(" Details "),
-        )
-        .wrap(Wrap { trim: false })
-        .scroll((app.detail_scroll, 0));
-
-    f.render_widget(paragraph, area);
-
-    let mut scrollbar_state = ScrollbarState::new(total_lines).position(app.detail_scroll as usize);
-    f.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .style(Style::default().fg(Color::DarkGray)),
-        area.inner(Margin::new(0, 1)),
-        &mut scrollbar_state,
-    );
-}
-
-fn format_command(cmd: &str) -> Vec<String> {
-    // Split at shell separators, keeping the separator at the start of the next line
-    let mut lines = Vec::new();
-    let mut current = String::new();
-
-    let chars: Vec<char> = cmd.chars().collect();
-    let len = chars.len();
-    let mut i = 0;
-
-    while i < len {
-        let c = chars[i];
-
-        if c == ';' {
-            current.push(';');
-            lines.push(current.trim().to_string());
-            current = String::new();
-            i += 1;
-        } else if c == '&' && i + 1 < len && chars[i + 1] == '&' {
-            current.push_str("&&");
-            lines.push(current.trim().to_string());
-            current = String::new();
-            i += 2;
-        } else if c == '|' && i + 1 < len && chars[i + 1] == '|' {
-            current.push_str("||");
-            lines.push(current.trim().to_string());
-            current = String::new();
-            i += 2;
-        } else if c == '|' && (i + 1 >= len || chars[i + 1] != '|') {
-            // Pipe — keep on same line but break after
-            current.push('|');
-            lines.push(current.trim().to_string());
-            current = String::new();
-            i += 1;
-        } else {
-            current.push(c);
-            i += 1;
-        }
-    }
-
-    let remaining = current.trim().to_string();
-    if !remaining.is_empty() {
-        lines.push(remaining);
-    }
-
-    if lines.is_empty() {
-        lines.push(cmd.to_string());
-    }
-
-    lines
-}
-
-fn highlight_shell_line<'a>(
-    line: &'a str,
-    keyword_style: Style,
-    op_style: Style,
-    default_style: Style,
-) -> Vec<Span<'a>> {
-    let mut spans = Vec::new();
-
-    // Highlight shell keywords and operators
-    let first_word = line.split_whitespace().next().unwrap_or("");
-    let is_keyword = matches!(
-        first_word,
-        "RUN"
-            | "CMD"
-            | "COPY"
-            | "ADD"
-            | "ENV"
-            | "WORKDIR"
-            | "EXPOSE"
-            | "FROM"
-            | "ARG"
-            | "LABEL"
-            | "ENTRYPOINT"
-            | "VOLUME"
-            | "USER"
-            | "SHELL"
-            | "STOPSIGNAL"
-            | "HEALTHCHECK"
-            | "ONBUILD"
-    );
-
-    if is_keyword {
-        spans.push(Span::styled(&line[..first_word.len()], keyword_style));
-        let rest = &line[first_word.len()..];
-        spans.extend(highlight_operators(rest, op_style, default_style));
-    } else {
-        spans.extend(highlight_operators(line, op_style, default_style));
-    }
-
-    spans
-}
-
-fn highlight_operators<'a>(text: &'a str, op_style: Style, default_style: Style) -> Vec<Span<'a>> {
-    let mut spans = Vec::new();
-    let mut last = 0;
-
-    let ops = ["&&", "||", "|", ">>", ">&", ">", "<"];
-
-    let bytes = text.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-
-    while i < len {
-        let mut matched = false;
-        for op in &ops {
-            let op_bytes = op.as_bytes();
-            if i + op_bytes.len() <= len && &bytes[i..i + op_bytes.len()] == op_bytes {
-                if last < i {
-                    spans.push(Span::styled(&text[last..i], default_style));
-                }
-                spans.push(Span::styled(&text[i..i + op_bytes.len()], op_style));
-                i += op_bytes.len();
-                last = i;
-                matched = true;
-                break;
-            }
-        }
-        if !matched {
-            i += 1;
-        }
-    }
-
-    if last < len {
-        spans.push(Span::styled(&text[last..], default_style));
-    }
-
-    spans
-}
-
-fn draw_status(f: &mut Frame, app: &App, area: Rect) {
-    let content = if app.input_mode {
-        format!("Output dir: {}█", app.input_buf)
-    } else if app.status.is_empty() {
-        format!(
-            " {} │ {}/{} │ {} │ fmt:{} │ q:quit tab j/k e:extract a:all f:format t:toggle o:output",
-            app.image.source,
-            app.image.os,
-            app.image.architecture,
-            tree::human_size(app.image.total_size),
-            app.output_format.label(),
-        )
-    } else {
-        format!(" {}", app.status)
-    };
-
-    let bar = Paragraph::new(content).style(
-        Style::default()
-            .bg(Color::Rgb(40, 40, 60))
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    );
-    f.render_widget(bar, area);
-}
-
-fn clean_command(cmd: &str) -> String {
-    let stripped = cmd.replace("/bin/sh -c ", "").replace("#(nop) ", "");
-    // Collapse internal whitespace (newlines, tabs, multiple spaces)
-    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn truncate_command(cmd: &str, max_len: usize) -> String {
-    let cleaned = clean_command(cmd);
-    if cleaned.len() > max_len {
-        format!("{}…", &cleaned[..max_len.saturating_sub(1)])
-    } else {
-        cleaned
-    }
 }

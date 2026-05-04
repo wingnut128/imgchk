@@ -1,9 +1,13 @@
+mod action;
 mod cache;
+mod command_format;
 mod extract;
 mod image;
 mod selection;
 mod tree;
 mod ui;
+mod update;
+mod view;
 
 use std::path::PathBuf;
 
@@ -78,11 +82,12 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
+    use image::ImageSource;
+    let rt = tokio::runtime::Runtime::new()?;
     let image = if image::is_tarball(image_ref) {
-        image::load_tarball(std::path::Path::new(image_ref))?
+        rt.block_on(image::TarballSource.load(image_ref, Some(&cli.platform)))?
     } else {
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(image::load_registry(image_ref, Some(&cli.platform)))?
+        rt.block_on(image::RegistrySource::default().load(image_ref, Some(&cli.platform)))?
     };
 
     if image.layers.is_empty() {
