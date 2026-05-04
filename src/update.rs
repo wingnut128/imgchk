@@ -189,7 +189,8 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
                 "selected"
             };
             let layer = &app.image.layers[app.layer_index];
-            match extract::extract_files(layer, &paths, &dir) {
+            let base_name = format!("layer-{}-files", layer.index);
+            match extract::extract_files(layer, &paths, &dir, app.output_format, &base_name) {
                 Ok(count) => {
                     app.status =
                         format!("Extracted {} {} files to {}", count, label, dir.display());
