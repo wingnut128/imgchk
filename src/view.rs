@@ -82,10 +82,11 @@ fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
         .highlight_symbol("▸ ");
 
     let mut state = ListState::default();
-    state.select(Some(app.layer_index));
+    state.select(Some(app.nav.layer_index));
     f.render_stateful_widget(list, area, &mut state);
 
-    let mut scrollbar_state = ScrollbarState::new(app.image.layers.len()).position(app.layer_index);
+    let mut scrollbar_state =
+        ScrollbarState::new(app.image.layers.len()).position(app.nav.layer_index);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .style(Style::default().fg(Color::DarkGray)),
@@ -95,16 +96,17 @@ fn draw_layers(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_files(f: &mut Frame, app: &App, area: Rect) {
-    let view_label = if app.cumulative {
+    let view_label = if app.nav.cumulative {
         "cumulative"
     } else {
         "layer"
     };
-    let title = format!(" Files ({}, {}) ", app.file_rows.len(), view_label);
+    let title = format!(" Files ({}, {}) ", app.nav.file_rows.len(), view_label);
 
     let (border_style, title_style) = focused_styles(app.focus == Pane::Files);
 
     let items: Vec<ListItem> = app
+        .nav
         .file_rows
         .iter()
         .map(|row| {
@@ -192,10 +194,11 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
         .highlight_symbol("▸ ");
 
     let mut state = ListState::default();
-    state.select(Some(app.file_index));
+    state.select(Some(app.nav.file_index));
     f.render_stateful_widget(list, area, &mut state);
 
-    let mut scrollbar_state = ScrollbarState::new(app.file_rows.len()).position(app.file_index);
+    let mut scrollbar_state =
+        ScrollbarState::new(app.nav.file_rows.len()).position(app.nav.file_index);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .style(Style::default().fg(Color::DarkGray)),
@@ -207,7 +210,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
 fn draw_details(f: &mut Frame, app: &App, area: Rect) {
     let (border_style, title_style) = focused_styles(app.focus == Pane::Details);
 
-    let layer = &app.image.layers[app.layer_index];
+    let layer = &app.image.layers[app.nav.layer_index];
     let file_count = layer.file_tree.file_count;
 
     let label_style = Style::default()
@@ -270,11 +273,12 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
                 .title(" Details "),
         )
         .wrap(Wrap { trim: false })
-        .scroll((app.detail_scroll, 0));
+        .scroll((app.nav.detail_scroll, 0));
 
     f.render_widget(paragraph, area);
 
-    let mut scrollbar_state = ScrollbarState::new(total_lines).position(app.detail_scroll as usize);
+    let mut scrollbar_state =
+        ScrollbarState::new(total_lines).position(app.nav.detail_scroll as usize);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .style(Style::default().fg(Color::DarkGray)),
@@ -284,19 +288,19 @@ fn draw_details(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status(f: &mut Frame, app: &App, area: Rect) {
-    let content = if app.input_mode {
-        format!("Output dir: {}█", app.input_buf)
-    } else if app.status.is_empty() {
+    let content = if app.modal.active {
+        format!("Output dir: {}█", app.modal.buffer)
+    } else if app.output.status.is_empty() {
         format!(
             " {} │ {}/{} │ {} │ fmt:{} │ q:quit tab j/k e:extract a:all f:format t:toggle o:output",
             app.image.source,
             app.image.os,
             app.image.architecture,
             tree::human_size(app.image.total_size),
-            app.output_format.label(),
+            app.output.format.label(),
         )
     } else {
-        format!(" {}", app.status)
+        format!(" {}", app.output.status)
     };
 
     let bar = Paragraph::new(content).style(
