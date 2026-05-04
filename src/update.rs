@@ -192,8 +192,10 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
             let base_name = format!("layer-{}-files", layer.index);
             match extract::extract_files(layer, &paths, &dir, app.output.format, &base_name) {
                 Ok(count) => {
+                    let dest = extract::extract_output_path(app.output.format, &dir, &base_name)
+                        .unwrap_or_else(|| dir.clone());
                     app.output.status =
-                        format!("Extracted {} {} files to {}", count, label, dir.display());
+                        format!("Extracted {} {} files to {}", count, label, dest.display());
                     // TODO: revisit whether selection should survive extraction
                     // so users can re-extract with a different format. Today's
                     // behavior matches the pre-refactor code.

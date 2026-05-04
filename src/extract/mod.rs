@@ -180,6 +180,22 @@ pub fn writer_for_format(
     }
 }
 
+/// Path the writer for `format` will produce inside `output_dir` for a
+/// selective-extract run. Returns the archive path for `Tar`/`TarGz`, the
+/// directory itself for `Dir`, and `None` for `Squashfs` (unsupported here).
+pub fn extract_output_path(
+    format: OutputFormat,
+    output_dir: &Path,
+    base_name: &str,
+) -> Option<PathBuf> {
+    match format {
+        OutputFormat::Dir => Some(output_dir.to_path_buf()),
+        OutputFormat::Tar => Some(output_dir.join(format!("{base_name}.tar"))),
+        OutputFormat::TarGz => Some(output_dir.join(format!("{base_name}.tar.gz"))),
+        OutputFormat::Squashfs => None,
+    }
+}
+
 /// Extract a selected set of paths from a layer's blob using the given
 /// output format. Compatibility wrapper over [`extract_with`].
 pub fn extract_files(
