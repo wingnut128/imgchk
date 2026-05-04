@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-05-04
+
+### Fixed
+- `imgchk <path>` now sniffs gzip magic bytes at the input boundary and falls back to single-layer inspection when the file has no `manifest.json`. Previously, pointing imgchk at one of its own extracted `layer-N.tar.gz` outputs failed with a tar-crate `numeric field did not have utf-8 text` cksum error. As a side benefit, gzipped Docker archives (`docker save … | gzip > out.tgz`) now also work.
+
 ## [0.3.0] - 2026-05-04
 
 ### Changed
