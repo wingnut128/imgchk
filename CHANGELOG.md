@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-06-15
+
+### Tests
+- Added a content-level assertion for tarball loading: a `docker save` archive's layer file tree is verified to contain `/usr/bin/hello` with the expected path, size, and mode, complementing the existing count-only checks.
+
 ## [0.4.0] - 2026-06-15
 
 ### Added
