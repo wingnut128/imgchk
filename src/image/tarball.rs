@@ -114,7 +114,7 @@ fn load_docker_archive(path: &Path) -> anyhow::Result<ImageInfo> {
     for (i, layer_path) in manifest.layers.iter().enumerate() {
         let data = layer_data
             .get(layer_path)
-            .with_context(|| format!("layer {} not found in tarball", layer_path))?;
+            .with_context(|| format!("layer {layer_path} not found in tarball"))?;
 
         let size = data.len() as u64;
         total_size += size;

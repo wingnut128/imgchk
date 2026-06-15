@@ -303,7 +303,7 @@ pub fn human_size(bytes: u64) -> String {
         b if b >= GB => format!("{:.1} GB", b as f64 / GB as f64),
         b if b >= MB => format!("{:.1} MB", b as f64 / MB as f64),
         b if b >= KB => format!("{:.1} KB", b as f64 / KB as f64),
-        b => format!("{} B", b),
+        b => format!("{b} B"),
     }
 }
 
@@ -346,7 +346,7 @@ mod tests {
     }
 
     fn whiteout(parent_path: &str, target: &str) -> FileNode {
-        let name = format!(".wh.{}", target);
+        let name = format!(".wh.{target}");
         FileNode {
             name: name.clone(),
             path: format!("{}/{}", parent_path.trim_end_matches('/'), name),

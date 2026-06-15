@@ -88,7 +88,7 @@ fn docker_credential(registry: &str) -> Option<RegistryAuth> {
         .cloned()
         .or(docker_config.creds_store)?;
 
-    let helper_bin = format!("docker-credential-{}", helper_name);
+    let helper_bin = format!("docker-credential-{helper_name}");
     let output = Command::new(&helper_bin)
         .arg("get")
         .stdin(std::process::Stdio::piped())
@@ -127,7 +127,7 @@ fn registry_to_server_url(registry: &str) -> String {
         "index.docker.io" | "registry-1.docker.io" | "docker.io" => {
             "https://index.docker.io/v1/".to_string()
         }
-        other => format!("https://{}", other),
+        other => format!("https://{other}"),
     }
 }
 
