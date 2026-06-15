@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-15
+
+### Added
+- After extracting files, the status bar now shows the produced archive path, so outputs are easy to locate without digging through the tmpdir.
+
+### Changed
+- `extract_with` now returns the output paths it produced, surfacing them to the caller (and the TUI) instead of discarding them.
+- Dependency bumps: `oci-client` 0.16.1 → 0.17.0, `ratatui` 0.30.0 → 0.30.1, `tar` 0.4.45 → 0.4.46, `serde_json` 1.0.149 → 1.0.150, `tokio` 1.52.1 → 1.52.3.
+
+### Security
+- Cleared RUSTSEC-2026-0173 (`proc-macro-error2` unmaintained) — the `oci-client` 0.17 bump pulls in transitive `getset` 0.1.6 → 0.1.7, which drops `proc-macro-error2` entirely.
+
+### CI
+- Dependabot auto-merge now uses the official `dependabot/fetch-metadata@v3.1.0` instead of StepSecurity's hosted fork, which had started failing with "Subscription is not valid" and blocked auto-merge of every Dependabot PR.
+- Action pin bumps: `taiki-e/install-action` 2.75.29 → 2.81.10, `github/codeql-action` 4.35.3 → 4.36.2, `step-security/harden-runner` 2.19.1 → 2.19.4, `actions/dependency-review-action` 4.9.0 → 5.0.0, `release-plz/action` 0.5.128 → 0.5.130.
+
+### Docs
+- Documented the release-plz `publish=false` manual-bump release workflow.
+
 ## [0.3.1] - 2026-05-04
 
 ### Fixed
