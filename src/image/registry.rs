@@ -90,10 +90,7 @@ async fn load(
 
     let manifest_pb = mp.add(ProgressBar::new_spinner());
     manifest_pb.set_style(spinner_style.clone());
-    manifest_pb.set_message(format!(
-        "Pulling manifest ({}/{})...",
-        target_os, target_arch
-    ));
+    manifest_pb.set_message(format!("Pulling manifest ({target_os}/{target_arch})..."));
     manifest_pb.enable_steady_tick(std::time::Duration::from_millis(80));
 
     let (manifest, _digest) = client
@@ -147,7 +144,7 @@ async fn load(
             let size = desc.size.max(0) as u64;
             let pb = mp.add(ProgressBar::new(size));
             pb.set_style(bar_style.clone());
-            pb.set_message(format!("{}", i));
+            pb.set_message(format!("{i}"));
             pb.enable_steady_tick(std::time::Duration::from_millis(80));
             pb
         })
@@ -157,7 +154,7 @@ async fn load(
     for (i, desc) in layer_descriptors.iter().enumerate() {
         let image_ref = image_ref.clone();
         let desc = desc.clone();
-        let tmp_path = tmp_dir.path().join(format!("layer-{}.tar.gz", i));
+        let tmp_path = tmp_dir.path().join(format!("layer-{i}.tar.gz"));
         let client = client.clone();
         let pb = layer_bars[i].clone();
         let blobs = blobs.clone();
@@ -166,7 +163,7 @@ async fn load(
             let expected_size = desc.size.max(0) as u64;
 
             if blobs.try_copy_cached(&desc.digest, expected_size, &tmp_path) {
-                pb.set_message(format!("{} (cached)", i));
+                pb.set_message(format!("{i} (cached)"));
                 pb.set_position(expected_size);
                 pb.finish_and_clear();
                 return Ok::<(PathBuf, u64), anyhow::Error>((tmp_path, expected_size));
@@ -176,7 +173,7 @@ async fn load(
             client
                 .pull_blob(&image_ref, &desc, &mut data)
                 .await
-                .with_context(|| format!("pulling layer {}", i))?;
+                .with_context(|| format!("pulling layer {i}"))?;
 
             let size = data.len() as u64;
             pb.set_position(size);

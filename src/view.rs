@@ -128,7 +128,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
             };
 
             let suffix = if let Some(ref target) = row.link_target {
-                format!(" -> {}", target)
+                format!(" -> {target}")
             } else if row.is_dir {
                 String::new()
             } else {
@@ -173,7 +173,7 @@ fn draw_files(f: &mut Frame, app: &App, area: Rect) {
 
             let line = Line::from(vec![
                 checkbox,
-                Span::raw(format!("{}{}", indent, icon)),
+                Span::raw(format!("{indent}{icon}")),
                 Span::styled(&row.name, name_style),
                 Span::styled(suffix, Style::default().fg(Color::Gray)),
             ]);

@@ -149,7 +149,7 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
             };
             app.output.status = match result {
                 Ok(msg) => msg,
-                Err(e) => format!("Export error: {}", e),
+                Err(e) => format!("Export error: {e}"),
             };
         }
 
@@ -172,7 +172,7 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
             };
             app.output.status = match result {
                 Ok(msg) => msg,
-                Err(e) => format!("Export error: {}", e),
+                Err(e) => format!("Export error: {e}"),
             };
         }
 
@@ -196,14 +196,14 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
                         [single] => single.display().to_string(),
                         _ => dir.display().to_string(),
                     };
-                    app.output.status = format!("Extracted {} {} files to {}", count, label, dest);
+                    app.output.status = format!("Extracted {count} {label} files to {dest}");
                     // TODO: revisit whether selection should survive extraction
                     // so users can re-extract with a different format. Today's
                     // behavior matches the pre-refactor code.
                     app.selection.clear();
                 }
                 Err(e) => {
-                    app.output.status = format!("Extract error: {}", e);
+                    app.output.status = format!("Extract error: {e}");
                 }
             }
         }
