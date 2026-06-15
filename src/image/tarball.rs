@@ -272,6 +272,23 @@ mod tests {
     }
 
     #[test]
+    fn docker_archive_layer_tree_has_expected_file() {
+        let path = write_temp(&write_docker_archive(), ".tar");
+        let info = load_tarball(&path).unwrap();
+        let tree = &info.layers[0].file_tree;
+
+        let node = tree
+            .find("usr/bin/hello")
+            .expect("usr/bin/hello should be present in the layer tree");
+        assert!(!node.is_dir);
+        assert_eq!(node.path, "/usr/bin/hello");
+        assert_eq!(node.size, b"hello\n".len() as u64);
+        assert_eq!(node.mode & 0o777, 0o755);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn loads_single_layer_tar_gz() {
         let path = write_temp(&gzip(&write_single_file_tar()), ".tar.gz");
         let info = load_tarball(&path).unwrap();
