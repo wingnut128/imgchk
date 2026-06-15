@@ -41,6 +41,17 @@ imgchk fetches OCI/Docker container images, displays layer metadata in an intera
 
 ## Build & Run
 
+Common tasks are wrapped in a `justfile` ([just](https://github.com/casey/just) is the task runner). Run `just` or `just --list` to see all recipes.
+
+```sh
+just build          # debug build
+just release        # optimized release build
+just run <image-ref> # build + run (e.g. just run nginx.tar)
+just hooks          # install the git pre-commit hook (fmt + clippy)
+```
+
+Or invoke cargo directly:
+
 ```sh
 cargo build --release
 cargo run -- <image-ref>
@@ -53,7 +64,7 @@ cargo run -- <image-ref>
 ## Testing
 
 ```sh
-cargo test
+just test    # or: cargo test
 ```
 
 ## Design Decisions
