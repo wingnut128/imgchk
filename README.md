@@ -52,10 +52,12 @@ cargo install --path .
 Or build locally:
 
 ```bash
-make build          # debug build
-make release        # optimized release build
-make hooks          # install pre-commit hook (fmt + clippy)
+just build          # debug build
+just release        # optimized release build
+just hooks          # install pre-commit hook (fmt + clippy)
 ```
+
+Run `just` (or `just --list`) to see all available recipes.
 
 ## Usage
 
