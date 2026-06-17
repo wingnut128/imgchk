@@ -25,7 +25,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: step-security/paths-filter@5c5241b8233e77b55b9046daf88f1cb7560281de # v4.0.1
         id: filter
         with:
@@ -56,7 +56,7 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: echo "No code changes detected; skipping lint."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         if: needs.changes.outputs.code == 'true'
@@ -90,7 +90,7 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: echo "No code changes detected; skipping tests."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         if: needs.changes.outputs.code == 'true'
@@ -124,7 +124,7 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: echo "No code changes detected; skipping audit."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.code == 'true'
       - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         if: needs.changes.outputs.code == 'true'
@@ -156,7 +156,7 @@ jobs:
         if: needs.changes.outputs.code != 'true'
         run: echo "No code changes detected; skipping build for ${{ matrix.target }}."
 
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         if: needs.changes.outputs.code == 'true'
