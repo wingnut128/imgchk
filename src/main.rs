@@ -2,6 +2,7 @@ mod action;
 mod command_format;
 mod extract;
 mod image;
+mod report;
 mod selection;
 mod tree;
 mod ui;
