@@ -82,6 +82,13 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         return;
     }
 
+    // Device/FIFO nodes (e.g. /dev/null) carry permission bits governed by
+    // device semantics, not content access — a conventional 0o666 on
+    // /dev/null isn't a security signal the way it would be on a regular file.
+    if node.is_special {
+        return;
+    }
+
     if node.mode & 0o4000 != 0 {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
@@ -187,6 +194,7 @@ mod tests {
             is_dir: false,
             is_whiteout: false,
             is_opaque: false,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }
@@ -202,6 +210,7 @@ mod tests {
             is_dir: true,
             is_whiteout: false,
             is_opaque: false,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }
@@ -217,9 +226,40 @@ mod tests {
             is_dir: false,
             is_whiteout: false,
             is_opaque: false,
+            is_special: false,
             link_target: Some(target.to_string()),
             children: BTreeMap::new(),
         }
+    }
+
+    fn device_node(path: &str, mode: u32) -> FileNode {
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        FileNode {
+            name,
+            path: path.to_string(),
+            size: 0,
+            mode,
+            is_dir: false,
+            is_whiteout: false,
+            is_opaque: false,
+            is_special: true,
+            link_target: None,
+            children: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn scan_suspicious_does_not_flag_world_writable_device_node() {
+        // /dev/null, /dev/zero, /dev/random, /dev/urandom are conventionally
+        // 0o666 (world-writable) — that's expected device-file permission,
+        // not a security signal. Regression test for a false positive seen
+        // on real apko-built images.
+        let mut tree = FileTree::new();
+        tree.insert_node("/dev/null", device_node("/dev/null", 0o666));
+
+        let findings = scan_suspicious(&tree);
+
+        assert!(findings.is_empty());
     }
 
     #[test]
