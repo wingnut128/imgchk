@@ -240,6 +240,7 @@ mod tests {
                     is_dir: false,
                     is_whiteout: false,
                     is_opaque: false,
+                    is_special: false,
                     link_target: None,
                     children: BTreeMap::new(),
                 },

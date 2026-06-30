@@ -11,6 +11,11 @@ pub struct FileNode {
     pub is_dir: bool,
     pub is_whiteout: bool,
     pub is_opaque: bool,
+    /// True for character/block device and FIFO entries (e.g. /dev/null).
+    /// These carry permission bits governed by device semantics, not
+    /// regular-file content access, so they're excluded from
+    /// content-oriented checks like the suspicious-file scan.
+    pub is_special: bool,
     pub link_target: Option<String>,
     pub children: BTreeMap<String, FileNode>,
 }
@@ -34,6 +39,7 @@ impl FileTree {
                 is_dir: true,
                 is_whiteout: false,
                 is_opaque: false,
+                is_special: false,
                 link_target: None,
                 children: BTreeMap::new(),
             },
@@ -62,6 +68,10 @@ impl FileTree {
             let is_whiteout = name.starts_with(".wh.");
             let is_opaque = name == ".wh..wh..opq";
             let is_dir = header.entry_type() == tar::EntryType::Directory;
+            let is_special = matches!(
+                header.entry_type(),
+                tar::EntryType::Char | tar::EntryType::Block | tar::EntryType::Fifo
+            );
             let link_target = match header.entry_type() {
                 tar::EntryType::Symlink | tar::EntryType::Link => {
                     header.link_name()?.map(|p| p.to_string_lossy().to_string())
@@ -77,6 +87,7 @@ impl FileTree {
                 is_dir,
                 is_whiteout,
                 is_opaque,
+                is_special,
                 link_target,
                 children: BTreeMap::new(),
             };
@@ -134,6 +145,7 @@ impl FileTree {
                         is_dir: true,
                         is_whiteout: false,
                         is_opaque: false,
+                        is_special: false,
                         link_target: None,
                         children: BTreeMap::new(),
                     });
@@ -177,6 +189,7 @@ fn apply_layer(target: &mut FileNode, source: &FileNode) {
                     is_dir: true,
                     is_whiteout: false,
                     is_opaque: false,
+                    is_special: false,
                     link_target: None,
                     children: BTreeMap::new(),
                 });
@@ -189,6 +202,7 @@ fn apply_layer(target: &mut FileNode, source: &FileNode) {
                     is_dir: true,
                     is_whiteout: false,
                     is_opaque: false,
+                    is_special: false,
                     link_target: None,
                     children: BTreeMap::new(),
                 };
@@ -205,6 +219,7 @@ fn apply_layer(target: &mut FileNode, source: &FileNode) {
                     is_dir: false,
                     is_whiteout: false,
                     is_opaque: false,
+                    is_special: src_child.is_special,
                     link_target: src_child.link_target.clone(),
                     children: BTreeMap::new(),
                 },
@@ -311,6 +326,59 @@ pub fn human_size(bytes: u64) -> String {
 mod tests {
     use super::*;
 
+    fn write_tar_with_entry_type(entry_type: tar::EntryType) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_path("dev/null").unwrap();
+        header.set_entry_type(entry_type);
+        header.set_size(0);
+        header.set_mode(0o666);
+        header.set_cksum();
+        builder.append(&header, &[][..]).unwrap();
+        builder.into_inner().unwrap()
+    }
+
+    #[test]
+    fn from_tar_marks_char_device_as_special() {
+        let data = write_tar_with_entry_type(tar::EntryType::Char);
+        let tree = FileTree::from_tar(std::io::Cursor::new(data)).unwrap();
+        let node = tree.find("/dev/null").unwrap();
+        assert!(node.is_special);
+    }
+
+    #[test]
+    fn from_tar_marks_block_device_as_special() {
+        let data = write_tar_with_entry_type(tar::EntryType::Block);
+        let tree = FileTree::from_tar(std::io::Cursor::new(data)).unwrap();
+        let node = tree.find("/dev/null").unwrap();
+        assert!(node.is_special);
+    }
+
+    #[test]
+    fn from_tar_marks_fifo_as_special() {
+        let data = write_tar_with_entry_type(tar::EntryType::Fifo);
+        let tree = FileTree::from_tar(std::io::Cursor::new(data)).unwrap();
+        let node = tree.find("/dev/null").unwrap();
+        assert!(node.is_special);
+    }
+
+    #[test]
+    fn from_tar_regular_file_is_not_special() {
+        let mut builder = tar::Builder::new(Vec::new());
+        let payload = b"hi";
+        let mut header = tar::Header::new_gnu();
+        header.set_path("etc/foo").unwrap();
+        header.set_size(payload.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append(&header, &payload[..]).unwrap();
+        let data = builder.into_inner().unwrap();
+
+        let tree = FileTree::from_tar(std::io::Cursor::new(data)).unwrap();
+        let node = tree.find("/etc/foo").unwrap();
+        assert!(!node.is_special);
+    }
+
     fn file(path: &str, size: u64) -> FileNode {
         let name = path.rsplit('/').next().unwrap_or(path).to_string();
         FileNode {
@@ -321,6 +389,7 @@ mod tests {
             is_dir: false,
             is_whiteout: false,
             is_opaque: false,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }
@@ -340,6 +409,7 @@ mod tests {
             is_dir: true,
             is_whiteout: false,
             is_opaque: false,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }
@@ -355,6 +425,7 @@ mod tests {
             is_dir: false,
             is_whiteout: true,
             is_opaque: false,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }
@@ -370,6 +441,7 @@ mod tests {
             is_dir: false,
             is_whiteout: true,
             is_opaque: true,
+            is_special: false,
             link_target: None,
             children: BTreeMap::new(),
         }

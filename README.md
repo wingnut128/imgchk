@@ -153,7 +153,7 @@ Press `f` to cycle formats. The current format is shown in the status bar. Then 
 }
 ```
 
-Each layer's `suspicious_files` lists regular files (directories and symlinks are never flagged) matching one or more of: `setuid`, `setgid`, `world_writable` (Unix mode bits), or `secret_pattern` (filenames like `id_rsa`, `*.pem`, `*.key`, `*.p12`, `.env`). A file matching multiple rules gets one entry per rule. The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
+Each layer's `suspicious_files` lists regular files (directories, symlinks, and device/FIFO nodes like `/dev/null` are never flagged) matching one or more of: `setuid`, `setgid`, `world_writable` (Unix mode bits), or `secret_pattern` (filenames like `id_rsa`, `*.pem`, `*.key`, `*.p12`, `.env`). A file matching multiple rules gets one entry per rule. The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
 
 ## Environment Variables
 
