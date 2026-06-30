@@ -2,8 +2,9 @@ use serde::Serialize;
 
 use crate::command_format::clean_command;
 use crate::image::ImageInfo;
-use crate::tree::FileTree;
+use crate::tree::{FileNode, FileTree};
 
+#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct ReportImage {
     pub source: String,
@@ -14,6 +15,7 @@ pub struct ReportImage {
     pub layers: Vec<ReportLayer>,
 }
 
+#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct ReportLayer {
     pub index: usize,
@@ -26,6 +28,7 @@ pub struct ReportLayer {
     pub suspicious_files: Vec<SuspiciousFile>,
 }
 
+#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct SuspiciousFile {
     pub path: String,
@@ -33,6 +36,7 @@ pub struct SuspiciousFile {
     pub mode: Option<u32>,
 }
 
+#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 pub fn build_report(image: &ImageInfo) -> ReportImage {
     ReportImage {
         source: image.source.clone(),
@@ -57,14 +61,68 @@ pub fn build_report(image: &ImageInfo) -> ReportImage {
     }
 }
 
-pub fn scan_suspicious(_tree: &FileTree) -> Vec<SuspiciousFile> {
-    Vec::new() // implemented in Task 2
+#[allow(dead_code)] // Used in Task 3 when scan_suspicious is called via --report CLI flag
+const SECRET_EXACT_NAMES: &[&str] = &["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".env"];
+#[allow(dead_code)] // Used in Task 3 when scan_suspicious is called via --report CLI flag
+const SECRET_EXTENSIONS: &[&str] = &[".pem", ".key", ".p12"];
+
+#[allow(dead_code)] // Used in Task 3 via --report CLI flag
+pub fn scan_suspicious(tree: &FileTree) -> Vec<SuspiciousFile> {
+    let mut findings = Vec::new();
+    walk(&tree.root, &mut findings);
+    findings
+}
+
+#[allow(dead_code)] // Helper for scan_suspicious, used via --report CLI flag
+fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
+    if node.is_dir {
+        for child in node.children.values() {
+            walk(child, findings);
+        }
+        return;
+    }
+
+    if node.mode & 0o4000 != 0 {
+        findings.push(SuspiciousFile {
+            path: node.path.clone(),
+            reason: "setuid",
+            mode: Some(node.mode),
+        });
+    }
+    if node.mode & 0o2000 != 0 {
+        findings.push(SuspiciousFile {
+            path: node.path.clone(),
+            reason: "setgid",
+            mode: Some(node.mode),
+        });
+    }
+    if node.mode & 0o002 != 0 {
+        findings.push(SuspiciousFile {
+            path: node.path.clone(),
+            reason: "world_writable",
+            mode: Some(node.mode),
+        });
+    }
+    if is_secret_pattern(&node.name) {
+        findings.push(SuspiciousFile {
+            path: node.path.clone(),
+            reason: "secret_pattern",
+            mode: None,
+        });
+    }
+}
+
+#[allow(dead_code)] // Helper for scan_suspicious, used via --report CLI flag
+fn is_secret_pattern(name: &str) -> bool {
+    SECRET_EXACT_NAMES.contains(&name) || SECRET_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::image::LayerInfo;
+    use crate::tree::FileNode;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
 
     fn empty_layer(index: usize, command: &str) -> LayerInfo {
@@ -117,5 +175,124 @@ mod tests {
 
         let json = serde_json::to_string(&build_report(&image)).unwrap();
         assert!(json.contains("\"signature\":null"));
+    }
+
+    // Test helpers for scan_suspicious tests
+    fn file_node(path: &str, mode: u32) -> FileNode {
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        FileNode {
+            name,
+            path: path.to_string(),
+            size: 100,
+            mode,
+            is_dir: false,
+            is_whiteout: false,
+            is_opaque: false,
+            link_target: None,
+            children: BTreeMap::new(),
+        }
+    }
+
+    fn dir_node(path: &str, mode: u32) -> FileNode {
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        FileNode {
+            name,
+            path: path.to_string(),
+            size: 0,
+            mode,
+            is_dir: true,
+            is_whiteout: false,
+            is_opaque: false,
+            link_target: None,
+            children: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn scan_suspicious_flags_setuid_file() {
+        let mut tree = FileTree::new();
+        tree.insert_node("/usr/bin/sudo", file_node("/usr/bin/sudo", 0o104755));
+
+        let findings = scan_suspicious(&tree);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].path, "/usr/bin/sudo");
+        assert_eq!(findings[0].reason, "setuid");
+        assert_eq!(findings[0].mode, Some(0o104755));
+    }
+
+    #[test]
+    fn scan_suspicious_flags_setgid_file() {
+        let mut tree = FileTree::new();
+        tree.insert_node("/usr/bin/wall", file_node("/usr/bin/wall", 0o102755));
+
+        let findings = scan_suspicious(&tree);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].reason, "setgid");
+    }
+
+    #[test]
+    fn scan_suspicious_flags_world_writable_file() {
+        let mut tree = FileTree::new();
+        tree.insert_node("/tmp/scratch", file_node("/tmp/scratch", 0o100666));
+
+        let findings = scan_suspicious(&tree);
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].reason, "world_writable");
+    }
+
+    #[test]
+    fn scan_suspicious_does_not_flag_directory_with_suspicious_mode_bits() {
+        let mut tree = FileTree::new();
+        tree.insert_node("/tmp", dir_node("/tmp", 0o104777));
+
+        let findings = scan_suspicious(&tree);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn scan_suspicious_flags_secret_pattern_filenames() {
+        let mut tree = FileTree::new();
+        tree.insert_node(
+            "/root/.ssh/id_rsa",
+            file_node("/root/.ssh/id_rsa", 0o100600),
+        );
+        tree.insert_node(
+            "/etc/tls/server.pem",
+            file_node("/etc/tls/server.pem", 0o100644),
+        );
+        tree.insert_node("/app/.env", file_node("/app/.env", 0o100644));
+        tree.insert_node("/app/keys.txt", file_node("/app/keys.txt", 0o100644));
+
+        let findings = scan_suspicious(&tree);
+        let secret_paths: Vec<&str> = findings
+            .iter()
+            .filter(|f| f.reason == "secret_pattern")
+            .map(|f| f.path.as_str())
+            .collect();
+
+        assert!(secret_paths.contains(&"/root/.ssh/id_rsa"));
+        assert!(secret_paths.contains(&"/etc/tls/server.pem"));
+        assert!(secret_paths.contains(&"/app/.env"));
+        assert!(!secret_paths.contains(&"/app/keys.txt"));
+    }
+
+    #[test]
+    fn scan_suspicious_emits_two_findings_for_file_matching_two_rules() {
+        let mut tree = FileTree::new();
+        tree.insert_node(
+            "/etc/secrets/server.key",
+            file_node("/etc/secrets/server.key", 0o104644),
+        );
+
+        let findings = scan_suspicious(&tree);
+        let reasons: Vec<&str> = findings.iter().map(|f| f.reason).collect();
+
+        assert_eq!(findings.len(), 2);
+        assert!(reasons.contains(&"setuid"));
+        assert!(reasons.contains(&"secret_pattern"));
     }
 }
