@@ -4,7 +4,6 @@ use crate::command_format::clean_command;
 use crate::image::ImageInfo;
 use crate::tree::{FileNode, FileTree};
 
-#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct ReportImage {
     pub source: String,
@@ -15,7 +14,6 @@ pub struct ReportImage {
     pub layers: Vec<ReportLayer>,
 }
 
-#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct ReportLayer {
     pub index: usize,
@@ -28,7 +26,6 @@ pub struct ReportLayer {
     pub suspicious_files: Vec<SuspiciousFile>,
 }
 
-#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 #[derive(Serialize)]
 pub struct SuspiciousFile {
     pub path: String,
@@ -36,7 +33,6 @@ pub struct SuspiciousFile {
     pub mode: Option<u32>,
 }
 
-#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 pub fn build_report(image: &ImageInfo) -> ReportImage {
     ReportImage {
         source: image.source.clone(),
@@ -61,19 +57,15 @@ pub fn build_report(image: &ImageInfo) -> ReportImage {
     }
 }
 
-#[allow(dead_code)] // Used in Task 3 when scan_suspicious is called via --report CLI flag
 const SECRET_EXACT_NAMES: &[&str] = &["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".env"];
-#[allow(dead_code)] // Used in Task 3 when scan_suspicious is called via --report CLI flag
 const SECRET_EXTENSIONS: &[&str] = &[".pem", ".key", ".p12"];
 
-#[allow(dead_code)] // Used in Task 3 via --report CLI flag
 pub fn scan_suspicious(tree: &FileTree) -> Vec<SuspiciousFile> {
     let mut findings = Vec::new();
     walk(&tree.root, &mut findings);
     findings
 }
 
-#[allow(dead_code)] // Helper for scan_suspicious, used via --report CLI flag
 fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
     if node.is_dir {
         for child in node.children.values() {
@@ -117,7 +109,6 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
     }
 }
 
-#[allow(dead_code)] // Helper for scan_suspicious, used via --report CLI flag
 fn is_secret_pattern(name: &str) -> bool {
     SECRET_EXACT_NAMES.contains(&name) || SECRET_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
 }
