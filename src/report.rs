@@ -4,7 +4,6 @@ use crate::command_format::clean_command;
 use crate::image::ImageInfo;
 use crate::tree::FileTree;
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct ReportImage {
     pub source: String,
@@ -15,7 +14,6 @@ pub struct ReportImage {
     pub layers: Vec<ReportLayer>,
 }
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct ReportLayer {
     pub index: usize,
@@ -28,7 +26,6 @@ pub struct ReportLayer {
     pub suspicious_files: Vec<SuspiciousFile>,
 }
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 pub struct SuspiciousFile {
     pub path: String,
@@ -36,7 +33,6 @@ pub struct SuspiciousFile {
     pub mode: Option<u32>,
 }
 
-#[allow(dead_code)]
 pub fn build_report(image: &ImageInfo) -> ReportImage {
     ReportImage {
         source: image.source.clone(),
@@ -61,7 +57,6 @@ pub fn build_report(image: &ImageInfo) -> ReportImage {
     }
 }
 
-#[allow(dead_code)]
 pub fn scan_suspicious(_tree: &FileTree) -> Vec<SuspiciousFile> {
     Vec::new() // implemented in Task 2
 }
