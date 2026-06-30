@@ -1,12 +1,13 @@
 [workspace]
-# Binary-only project; don't publish to crates.io.
+# Binary-first project, not a public crates.io release.
 #
-# Manual-bump workflow: release-plz does NOT auto-bump the version from
-# conventional commits when publish=false (its bump path requires a registry
-# lookup which is skipped in this mode). To cut a release, hand-edit
-# Cargo.toml + Cargo.lock + CHANGELOG.md and commit `chore: release vX.Y.Z`.
-# release-plz then creates the tag, opens a draft GitHub Release, and
-# release.yml attaches binaries + un-drafts. Only the bump decision is manual.
+# Auto-bump workflow: use git tags (not the registry) to determine the
+# released version, so release-plz CAN compute the next version for an
+# unpublished crate from conventional commits. The release-pr job then
+# opens a `chore: release vX.Y.Z` Release PR that bumps Cargo.toml +
+# Cargo.lock + CHANGELOG.md; merging it creates the tag + draft GitHub
+# Release, and release.yml attaches binaries + un-drafts.
+git_only = true
 publish = false
 # Keep the GitHub Release + tag creation — release.yml builds and
 # uploads binaries on tag push.
@@ -19,6 +20,15 @@ changelog_update = true
 # The binary-upload workflow triggers on tag push; create release as
 # draft so it isn't public until the binaries are attached.
 git_release_draft = true
+
+[[package]]
+name = "imgchk"
+# Bump from conventional commits alone. cargo-semver-checks (release-plz
+# default) only bumps on actual public-API changes, so releases driven by
+# build/CI/docs commits — which don't touch the public API of a binary
+# crate — would never get cut. Disabling the check lets feat:/fix:/build:
+# commits drive the bump directly.
+semver_check = false
 
 [changelog]
 header = """# Changelog
