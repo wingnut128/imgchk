@@ -82,6 +82,11 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         return;
     }
 
+    // Symlinks are never flagged as suspicious — rules apply to regular files only
+    if node.link_target.is_some() {
+        return;
+    }
+
     if node.mode & 0o4000 != 0 {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
@@ -208,6 +213,21 @@ mod tests {
         }
     }
 
+    fn symlink_node(path: &str, target: &str) -> FileNode {
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        FileNode {
+            name,
+            path: path.to_string(),
+            size: 0,
+            mode: 0o120777, // symlink mode
+            is_dir: false,
+            is_whiteout: false,
+            is_opaque: false,
+            link_target: Some(target.to_string()),
+            children: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn scan_suspicious_flags_setuid_file() {
         let mut tree = FileTree::new();
@@ -294,5 +314,44 @@ mod tests {
         assert_eq!(findings.len(), 2);
         assert!(reasons.contains(&"setuid"));
         assert!(reasons.contains(&"secret_pattern"));
+    }
+
+    #[test]
+    fn scan_suspicious_does_not_flag_symlink_with_secret_name() {
+        let mut tree = FileTree::new();
+        tree.insert_node(
+            "/root/.ssh/id_rsa",
+            symlink_node("/root/.ssh/id_rsa", "/other/location"),
+        );
+
+        let findings = scan_suspicious(&tree);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn scan_suspicious_does_not_flag_symlink_with_suspicious_mode() {
+        let mut tree = FileTree::new();
+        // Create a symlink but manually set mode bits that would be suspicious for regular files
+        let mut symlink = symlink_node("/usr/bin/symlink", "/target");
+        symlink.mode = 0o104755; // setuid bits (would trigger setuid rule if symlink check weren't in place)
+        tree.insert_node("/usr/bin/symlink", symlink);
+
+        let findings = scan_suspicious(&tree);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn scan_suspicious_does_not_flag_symlink_with_secret_extension() {
+        let mut tree = FileTree::new();
+        tree.insert_node(
+            "/app/secret.pem",
+            symlink_node("/app/secret.pem", "/etc/ssl/certs/secret.pem"),
+        );
+
+        let findings = scan_suspicious(&tree);
+
+        assert!(findings.is_empty());
     }
 }
