@@ -66,6 +66,9 @@ pub fn scan_suspicious(tree: &FileTree) -> Vec<SuspiciousFile> {
     findings
 }
 
+// `node.mode` is the raw tar mode: only the low permission/special bits
+// (setuid/setgid/world-writable) are meaningful here, regardless of whether
+// type bits (S_IFMT) happen to be present.
 fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
     if node.is_dir {
         for child in node.children.values() {
