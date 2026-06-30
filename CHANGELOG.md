@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2](https://github.com/wingnut128/imgchk/compare/v0.4.1...v0.4.2) - 2026-06-30
+
+### Other
+
+- *(deps)* bump quinn-proto to 0.11.15 for RUSTSEC-2026-0185 ([#64](https://github.com/wingnut128/imgchk/pull/64))
+- enable release-plz auto-bump via git_only ([#65](https://github.com/wingnut128/imgchk/pull/65))
+- *(deps)* bump taiki-e/install-action from 2.81.10 to 2.81.11 ([#58](https://github.com/wingnut128/imgchk/pull/58))
+- *(deps)* bump actions/checkout from 6.0.2 to 6.0.3 ([#59](https://github.com/wingnut128/imgchk/pull/59))
+
 ## [0.4.1] - 2026-06-15
 
 ### Tests
