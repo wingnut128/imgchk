@@ -2,6 +2,7 @@ mod action;
 mod command_format;
 mod extract;
 mod image;
+mod report;
 mod selection;
 mod tree;
 mod ui;
@@ -25,6 +26,9 @@ EXAMPLES:
 
     Set an output directory for extractions:
         imgchk -o /tmp/extracted ghcr.io/org/app:v1.2
+
+    Print a JSON report instead of launching the TUI:
+        imgchk nginx:latest --report
 
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
@@ -67,6 +71,10 @@ struct Cli {
     /// Target platform (e.g., linux/amd64, linux/arm64)
     #[arg(long, default_value = "linux/amd64")]
     platform: String,
+
+    /// Print a JSON analysis report to stdout instead of launching the TUI
+    #[arg(long)]
+    report: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -93,5 +101,30 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("No layers found in image");
     }
 
+    if cli.report {
+        let report = report::build_report(&image);
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(());
+    }
+
     ui::run(image, cli.output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn cli_parses_report_flag() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--report"]);
+        assert!(cli.report);
+        assert_eq!(cli.image.as_deref(), Some("nginx:latest"));
+    }
+
+    #[test]
+    fn cli_report_defaults_to_false() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest"]);
+        assert!(!cli.report);
+    }
 }

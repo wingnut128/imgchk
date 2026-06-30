@@ -1,0 +1,77 @@
+name: Auto-Merge
+
+# Auto-merge only ENABLES GitHub's native auto-merge (gh pr merge --auto) —
+# the actual merge still waits on every required status check in branch
+# protection (Detect Changes, Format & Lint, Test, Security Audit, Build x3,
+# dependency-review). This workflow only decides *who* is trusted to skip
+# manually clicking merge, not which checks must pass.
+#
+# Two independent trust paths, each separately gated:
+#   - automerge-dependabot: dependabot[bot] PRs, gated on update type
+#     (never auto-merges major version bumps) via dependabot/fetch-metadata.
+#   - automerge-trusted: PRs opened by maintainers in TRUSTED_ACTORS below.
+#     Triggered on `pull_request` (not `pull_request_target`), so GitHub
+#     forces GITHUB_TOKEN to read-only for any fork-originated PR regardless
+#     of the `permissions:` block here — a malicious fork PR cannot grant
+#     itself merge rights by editing this file. The same-repo check below is
+#     belt-and-suspenders on top of that platform guarantee.
+#
+# To trust an additional maintainer, add their GitHub login to
+# TRUSTED_ACTORS in the automerge-trusted job below.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  automerge-dependabot:
+    name: Auto-Merge (Dependabot)
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-merge patch and minor updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  automerge-trusted:
+    name: Auto-Merge (Trusted Maintainer)
+    runs-on: ubuntu-latest
+    # Same-repo check is redundant with GitHub's fork-PR token downgrade,
+    # kept explicit so this condition is self-documenting and doesn't rely
+    # on readers knowing the platform-level guarantee.
+    if: |
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(fromJSON('["wingnut128"]'), github.actor)
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Enable auto-merge
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
