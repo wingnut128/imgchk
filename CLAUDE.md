@@ -25,6 +25,7 @@ imgchk fetches OCI/Docker container images, displays layer metadata in an intera
    - **Details** (right bottom) — metadata for the selected layer (command, digest, diffID, size, created, file count)
 3. **Extraction:** Use `ocirender` for output. Supported formats: squashfs, tar, directory extraction
 4. **Output directory:** Set via `-o` flag or `o` keybinding in the TUI. If unset, creates a tmpdir on first extraction and displays the full path in the status bar
+5. **Report mode:** `--report` skips the TUI entirely and prints a JSON analysis (per-layer metadata + suspicious-file findings: setuid/setgid/world-writable/secret-pattern) to stdout, for CI/scripting use. Implemented in `src/report.rs`. No exit-code gating and no signature verification in this mode — `signature` is reserved (always `null`) for a future spec.
 
 ## TUI Keybindings
 

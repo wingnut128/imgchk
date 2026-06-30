@@ -5,6 +5,7 @@ A terminal UI tool for inspecting Docker and OCI container images. Browse layers
 ## Features
 
 - **Registry & tarball loading** — pull images from Docker Hub, GHCR, or any OCI registry, or load from `docker save` tarballs
+- **Non-interactive report mode** — `--report` prints a JSON analysis (layer metadata + suspicious-file findings) to stdout for CI/scripting use
 - **Layer browser** — navigate layers with metadata (size, digest, creation command)
 - **File tree explorer** — browse each layer's filesystem with expand/collapse, selection, and cumulative view
 - **Multiple export formats** — extract as tar.gz, tar, squashfs, or directory via [ocirender](https://crates.io/crates/ocirender)
@@ -73,6 +74,9 @@ imgchk ./myimage.tar
 
 # Set an output directory for extractions
 imgchk -o /tmp/extracted ghcr.io/org/app:v1.2
+
+# Print a JSON report instead of launching the TUI
+imgchk nginx:latest --report
 ```
 
 ## TUI Layout
@@ -119,6 +123,37 @@ imgchk -o /tmp/extracted ghcr.io/org/app:v1.2
 | **dir** | `f` | Merged filesystem extracted to a directory |
 
 Press `f` to cycle formats. The current format is shown in the status bar. Then use `e` (single layer) or `a` (all layers merged) to export.
+
+## Report Mode
+
+`imgchk <image-ref> --report` fetches and analyzes the image exactly as the TUI does, then prints a JSON report to stdout and exits — no interactive session is launched. Useful for CI checks and scripting.
+
+```json
+{
+  "source": "nginx:latest",
+  "architecture": "amd64",
+  "os": "linux",
+  "total_size": 142312345,
+  "signature": null,
+  "layers": [
+    {
+      "index": 0,
+      "digest": "sha256:...",
+      "diff_id": "sha256:...",
+      "size": 12345,
+      "command": "RUN apt-get update && apt-get install -y curl",
+      "created": "2026-01-01T00:00:00Z",
+      "file_count": 482,
+      "suspicious_files": [
+        {"path": "/usr/bin/sudo", "reason": "setuid", "mode": 2479},
+        {"path": "/etc/foo.pem", "reason": "secret_pattern", "mode": null}
+      ]
+    }
+  ]
+}
+```
+
+Each layer's `suspicious_files` lists regular files (directories and symlinks are never flagged) matching one or more of: `setuid`, `setgid`, `world_writable` (Unix mode bits), or `secret_pattern` (filenames like `id_rsa`, `*.pem`, `*.key`, `*.p12`, `.env`). A file matching multiple rules gets one entry per rule. The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
 
 ## Environment Variables
 
