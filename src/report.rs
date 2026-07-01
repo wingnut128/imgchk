@@ -30,6 +30,10 @@ pub struct ReportLayer {
 pub struct SuspiciousFile {
     pub path: String,
     pub reason: &'static str,
+    /// `info` for setuid/setgid — expected on any base-distro rootfs
+    /// (passwd, su, mount, ...), not itself an anomaly. `warning` for
+    /// world_writable/secret_pattern — those are the actually unusual signals.
+    pub severity: &'static str,
     pub mode: Option<u32>,
 }
 
@@ -93,6 +97,7 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
             reason: "setuid",
+            severity: "info",
             mode: Some(node.mode),
         });
     }
@@ -100,6 +105,7 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
             reason: "setgid",
+            severity: "info",
             mode: Some(node.mode),
         });
     }
@@ -107,6 +113,7 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
             reason: "world_writable",
+            severity: "warning",
             mode: Some(node.mode),
         });
     }
@@ -114,6 +121,7 @@ fn walk(node: &FileNode, findings: &mut Vec<SuspiciousFile>) {
         findings.push(SuspiciousFile {
             path: node.path.clone(),
             reason: "secret_pattern",
+            severity: "warning",
             mode: None,
         });
     }
@@ -273,6 +281,7 @@ mod tests {
         assert_eq!(findings[0].path, "/usr/bin/sudo");
         assert_eq!(findings[0].reason, "setuid");
         assert_eq!(findings[0].mode, Some(0o104755));
+        assert_eq!(findings[0].severity, "info");
     }
 
     #[test]
@@ -284,6 +293,7 @@ mod tests {
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].reason, "setgid");
+        assert_eq!(findings[0].severity, "info");
     }
 
     #[test]
@@ -295,6 +305,7 @@ mod tests {
 
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].reason, "world_writable");
+        assert_eq!(findings[0].severity, "warning");
     }
 
     #[test]
@@ -332,6 +343,7 @@ mod tests {
         assert!(secret_paths.contains(&"/etc/tls/server.pem"));
         assert!(secret_paths.contains(&"/app/.env"));
         assert!(!secret_paths.contains(&"/app/keys.txt"));
+        assert!(findings.iter().all(|f| f.severity == "warning"));
     }
 
     #[test]
