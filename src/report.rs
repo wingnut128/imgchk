@@ -2,6 +2,7 @@ use serde::Serialize;
 
 use crate::command_format::clean_command;
 use crate::image::ImageInfo;
+use crate::scan::ScanResult;
 use crate::tree::{FileNode, FileTree};
 
 #[derive(Serialize)]
@@ -11,6 +12,7 @@ pub struct ReportImage {
     pub os: String,
     pub total_size: u64,
     pub signature: Option<()>,
+    pub scan: Option<ScanResult>,
     pub layers: Vec<ReportLayer>,
 }
 
@@ -44,6 +46,7 @@ pub fn build_report(image: &ImageInfo) -> ReportImage {
         os: image.os.clone(),
         total_size: image.total_size,
         signature: None,
+        scan: None,
         layers: image
             .layers
             .iter()

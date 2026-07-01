@@ -31,6 +31,12 @@ EXAMPLES:
     Print a JSON report instead of launching the TUI:
         imgchk nginx:latest --report
 
+    Run trivy against the image and embed the results in the report:
+        imgchk nginx:latest --report --scan trivy
+
+    Use any scanner via a custom command ({path} is the extracted rootfs dir):
+        imgchk nginx:latest --report --scan custom --scan-cmd 'mytool scan {path} --json'
+
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
     Tab             Cycle pane focus (Layers → Files → Details)
@@ -76,10 +82,36 @@ struct Cli {
     /// Print a JSON analysis report to stdout instead of launching the TUI
     #[arg(long)]
     report: bool,
+
+    /// Run an external scanner against the merged image filesystem and
+    /// embed its output in the report (trivy, grype, or custom). Requires
+    /// --report.
+    #[arg(long, value_enum, requires = "report")]
+    scan: Option<scan::ScanTool>,
+
+    /// Custom scanner command template, required iff --scan=custom.
+    /// Use {path} as a placeholder for the extracted rootfs directory.
+    #[arg(long)]
+    scan_cmd: Option<String>,
+}
+
+/// Cross-flag rules clap's declarative attributes can't express (they
+/// depend on `scan`'s specific value, not just presence). `--scan` requiring
+/// `--report` is instead handled by clap's `requires = "report"` attribute
+/// on the `scan` field above.
+fn validate_scan_args(cli: &Cli) -> anyhow::Result<()> {
+    if cli.scan == Some(scan::ScanTool::Custom) && cli.scan_cmd.is_none() {
+        anyhow::bail!("--scan=custom requires --scan-cmd");
+    }
+    if cli.scan != Some(scan::ScanTool::Custom) && cli.scan_cmd.is_some() {
+        anyhow::bail!("--scan-cmd is only valid with --scan=custom");
+    }
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    validate_scan_args(&cli)?;
 
     let image_ref = match cli.image {
         Some(ref img) => img.as_str(),
@@ -103,7 +135,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     if cli.report {
-        let report = report::build_report(&image);
+        let mut report = report::build_report(&image);
+        if let Some(tool) = cli.scan {
+            report.scan = Some(scan::run_scan(tool, cli.scan_cmd.as_deref(), &image.layers));
+        }
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
@@ -127,5 +162,51 @@ mod tests {
     fn cli_report_defaults_to_false() {
         let cli = Cli::parse_from(["imgchk", "nginx:latest"]);
         assert!(!cli.report);
+    }
+
+    #[test]
+    fn cli_scan_requires_report() {
+        let result = Cli::try_parse_from(["imgchk", "nginx:latest", "--scan", "trivy"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_scan_with_report_parses() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--report", "--scan", "trivy"]);
+        assert_eq!(cli.scan, Some(scan::ScanTool::Trivy));
+    }
+
+    #[test]
+    fn validate_scan_args_errors_when_custom_missing_scan_cmd() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--report", "--scan", "custom"]);
+        assert!(validate_scan_args(&cli).is_err());
+    }
+
+    #[test]
+    fn validate_scan_args_errors_when_scan_cmd_given_without_custom() {
+        let cli = Cli::parse_from([
+            "imgchk",
+            "nginx:latest",
+            "--report",
+            "--scan",
+            "trivy",
+            "--scan-cmd",
+            "foo {path}",
+        ]);
+        assert!(validate_scan_args(&cli).is_err());
+    }
+
+    #[test]
+    fn validate_scan_args_ok_for_valid_custom_combination() {
+        let cli = Cli::parse_from([
+            "imgchk",
+            "nginx:latest",
+            "--report",
+            "--scan",
+            "custom",
+            "--scan-cmd",
+            "foo {path}",
+        ]);
+        assert!(validate_scan_args(&cli).is_ok());
     }
 }
