@@ -145,15 +145,42 @@ Press `f` to cycle formats. The current format is shown in the status bar. Then 
       "created": "2026-01-01T00:00:00Z",
       "file_count": 482,
       "suspicious_files": [
-        {"path": "/usr/bin/sudo", "reason": "setuid", "mode": 2479},
-        {"path": "/etc/foo.pem", "reason": "secret_pattern", "mode": null}
+        {"path": "/usr/bin/sudo", "reason": "setuid", "severity": "info", "mode": 2479},
+        {"path": "/etc/foo.pem", "reason": "secret_pattern", "severity": "warning", "mode": null}
       ]
     }
   ]
 }
 ```
 
-Each layer's `suspicious_files` lists regular files (directories, symlinks, and device/FIFO nodes like `/dev/null` are never flagged) matching one or more of: `setuid`, `setgid`, `world_writable` (Unix mode bits), or `secret_pattern` (filenames like `id_rsa`, `*.pem`, `*.key`, `*.p12`, `.env`). A file matching multiple rules gets one entry per rule. The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
+Each layer's `suspicious_files` lists regular files (directories, symlinks, and device/FIFO nodes like `/dev/null` are never flagged) matching one or more of: `setuid`, `setgid`, `world_writable` (Unix mode bits), or `secret_pattern` (filenames like `id_rsa`, `*.pem`, `*.key`, `*.p12`, `.env`). A file matching multiple rules gets one entry per rule. Every finding carries a `severity`:
+
+- `info` — `setuid`/`setgid`. Expected on any base-distro rootfs (`passwd`, `su`, `mount`, `chsh`, ...) — flagged for visibility, not itself an anomaly.
+- `warning` — `world_writable`/`secret_pattern`. Actually unusual; worth a look.
+
+The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
+
+### jq recipes
+
+```bash
+# Only the findings worth acting on (skip expected setuid/setgid noise)
+imgchk nginx:latest --report | jq '.layers[].suspicious_files[] | select(.severity == "warning")'
+
+# Fail CI if any warning-severity finding exists
+imgchk nginx:latest --report | jq -e '[.layers[].suspicious_files[] | select(.severity == "warning")] | length == 0' > /dev/null
+
+# Every suspicious file across all layers, flattened, with its layer index
+imgchk nginx:latest --report | jq '[.layers[] | .index as $i | .suspicious_files[] | {layer: $i, path, reason, severity}]'
+
+# Total image size in human-readable form
+imgchk nginx:latest --report | jq -r '.total_size | tostring + " bytes"'
+
+# Layers over 50MB, sorted largest first
+imgchk nginx:latest --report | jq '[.layers[] | select(.size > 50000000)] | sort_by(-.size) | map({index, size, command})'
+
+# Just the counts: how many suspicious files per layer
+imgchk nginx:latest --report | jq '.layers[] | {index, suspicious_count: (.suspicious_files | length)}'
+```
 
 ## Environment Variables
 
