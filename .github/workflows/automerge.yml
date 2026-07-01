@@ -18,6 +18,15 @@ name: Auto-Merge
 #
 # To trust an additional maintainer, add their GitHub login to
 # TRUSTED_ACTORS in the automerge-trusted job below.
+#
+# The merge step in both jobs authenticates with RELEASE_PLZ_TOKEN (a
+# fine-grained PAT, not GITHUB_TOKEN). GitHub does not fire other workflows'
+# `push`/`pull_request` triggers for events produced using the default
+# GITHUB_TOKEN (loop-prevention) — so a merge performed with GITHUB_TOKEN
+# silently skips CI, CodeQL, and release-plz on main, and no release PR ever
+# gets opened for the merged change. Using a PAT here matches how
+# release-plz.yml already authenticates for the same reason (see its
+# comment / project CLAUDE.md).
 
 on:
   pull_request:
@@ -30,9 +39,10 @@ jobs:
     name: Auto-Merge (Dependabot)
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
+    # GITHUB_TOKEN no longer performs the merge (see RELEASE_PLZ_TOKEN note
+    # above) — read is all it needs for fetch-metadata.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -50,7 +60,7 @@ jobs:
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
   automerge-trusted:
     name: Auto-Merge (Trusted Maintainer)
@@ -61,9 +71,10 @@ jobs:
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
       contains(fromJSON('["wingnut128"]'), github.actor)
+    # GITHUB_TOKEN no longer performs the merge (see RELEASE_PLZ_TOKEN note
+    # above) — this job needs no write access to the default token at all.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
@@ -74,4 +85,4 @@ jobs:
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
