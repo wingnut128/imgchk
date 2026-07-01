@@ -1,7 +1,13 @@
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 
+use ocirender::ImageSpec;
 use serde::Serialize;
+use tempfile::tempdir;
+
+use crate::extract;
+use crate::image::LayerInfo;
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanTool {
@@ -91,9 +97,70 @@ pub fn run_resolved_command(tool: ScanTool, custom_cmd: Option<&str>, path: &Pat
     }
 }
 
+/// Extract the image's merged (whiteout-resolved) filesystem to a fresh,
+/// ephemeral tempdir — independent of `-o`/`cli.output`, always cleaned up
+/// after the scan regardless of outcome — then run `tool`'s scan command
+/// against it.
+pub fn run_scan(tool: ScanTool, custom_cmd: Option<&str>, layers: &[LayerInfo]) -> ScanResult {
+    let tool_name = tool.name().to_string();
+
+    let dir = match tempdir() {
+        Ok(d) => d,
+        Err(e) => {
+            return ScanResult {
+                tool: tool_name,
+                command: String::new(),
+                exit_code: None,
+                output: None,
+                error: Some(format!("failed to create tempdir: {e}")),
+            };
+        }
+    };
+
+    let dir_path: PathBuf = dir.path().to_path_buf();
+    if let Err(e) = extract::export_ocirender(layers, ImageSpec::Dir { path: dir_path }) {
+        return ScanResult {
+            tool: tool_name,
+            command: String::new(),
+            exit_code: None,
+            output: None,
+            error: Some(format!("failed to extract image for scanning: {e}")),
+        };
+    }
+
+    run_resolved_command(tool, custom_cmd, dir.path())
+    // `dir` (TempDir) drops at the end of this scope, removing the tempdir.
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tree::FileTree;
+
+    fn bogus_layer() -> LayerInfo {
+        LayerInfo {
+            index: 0,
+            digest: "sha256:deadbeef".to_string(),
+            diff_id: "sha256:deadbeef".to_string(),
+            size: 0,
+            command: "RUN true".to_string(),
+            created: "2026-01-01T00:00:00Z".to_string(),
+            file_tree: FileTree::new(),
+            blob_path: PathBuf::from("/nonexistent/path/does-not-exist.tar.gz"),
+            media_type: "application/vnd.docker.image.rootfs.diff.tar.gzip".to_string(),
+        }
+    }
+
+    #[test]
+    fn run_scan_reports_error_when_layer_blob_is_missing() {
+        let layers = vec![bogus_layer()];
+        let result = run_scan(ScanTool::Trivy, None, &layers);
+
+        assert_eq!(result.output, None);
+        assert_eq!(result.exit_code, None);
+        let error = result.error.expect("expected an error for a missing blob");
+        assert!(error.starts_with("failed to extract image for scanning"));
+    }
 
     #[test]
     fn resolve_command_trivy_preset() {
