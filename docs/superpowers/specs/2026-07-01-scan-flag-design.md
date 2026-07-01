@@ -173,3 +173,24 @@ Field semantics:
   after the call returns Exercise both a valid-JSON-stdout case and a
   non-JSON-stdout case (raw string fallback), and a command-not-found case
   (`error` populated, `output`/`exit_code` null).
+
+## Documentation
+
+Every past CLI-surface change to this project has updated `README.md` and
+`CLAUDE.md` alongside the code (`--report`, the `severity` field, the jq
+recipes) — this one is held to the same bar, as part of the implementation
+plan itself, not a follow-up:
+
+- `README.md`:
+  - `## Features` bullet mentioning `--scan`.
+  - `## Report Mode` section: document the `scan` field in the JSON example,
+    the three `--scan` values, `--scan-cmd`'s `{path}` placeholder, and the
+    validation rules (requires `--report`; `--scan-cmd` only with
+    `--scan=custom`).
+  - A new jq recipe or two under the existing "jq recipes" section (e.g.
+    pulling `scan.output` out, checking `scan.error` for null before trusting
+    `scan.output`).
+- `CLAUDE.md`'s `## Core Behavior` list: add a line for `--scan` alongside
+  the existing `--report` line, following the same one-line style.
+- The binary's own `--help` text (`EXAMPLES_HELP` in `src/main.rs`): add a
+  usage example, matching how `--report` was documented there.
