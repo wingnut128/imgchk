@@ -26,6 +26,7 @@ imgchk fetches OCI/Docker container images, displays layer metadata in an intera
 3. **Extraction:** Use `ocirender` for output. Supported formats: squashfs, tar, directory extraction
 4. **Output directory:** Set via `-o` flag or `o` keybinding in the TUI. If unset, creates a tmpdir on first extraction and displays the full path in the status bar
 5. **Report mode:** `--report` skips the TUI entirely and prints a JSON analysis (per-layer metadata + suspicious-file findings: setuid/setgid/world-writable/secret-pattern) to stdout, for CI/scripting use. Implemented in `src/report.rs`. No exit-code gating and no signature verification in this mode — `signature` is reserved (always `null`) for a future spec.
+6. **Vulnerability scanning:** `--scan <trivy|grype|custom>` (requires `--report`) extracts the merged filesystem to a tempdir and shells out to an external scanner, embedding its raw JSON (or raw stdout) output under a top-level `scan` field. Implemented in `src/scan.rs`. `--scan=custom` requires `--scan-cmd '<template>'` with a `{path}` placeholder. A scan failure surfaces in `scan.error` without blocking the rest of the report. No normalization of scanner output, no exit-code gating, no timeout, no TUI integration.
 
 ## TUI Keybindings
 

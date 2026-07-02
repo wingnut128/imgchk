@@ -6,6 +6,7 @@ A terminal UI tool for inspecting Docker and OCI container images. Browse layers
 
 - **Registry & tarball loading** — pull images from Docker Hub, GHCR, or any OCI registry, or load from `docker save` tarballs
 - **Non-interactive report mode** — `--report` prints a JSON analysis (layer metadata + suspicious-file findings) to stdout for CI/scripting use
+- **Pluggable vulnerability scanning** — `--scan trivy`/`--scan grype`/`--scan custom` runs an external scanner against the merged image filesystem and embeds its output in the report
 - **Layer browser** — navigate layers with metadata (size, digest, creation command)
 - **File tree explorer** — browse each layer's filesystem with expand/collapse, selection, and cumulative view
 - **Multiple export formats** — extract as tar.gz, tar, squashfs, or directory via [ocirender](https://crates.io/crates/ocirender)
@@ -135,6 +136,7 @@ Press `f` to cycle formats. The current format is shown in the status bar. Then 
   "os": "linux",
   "total_size": 142312345,
   "signature": null,
+  "scan": null,
   "layers": [
     {
       "index": 0,
@@ -160,6 +162,28 @@ Each layer's `suspicious_files` lists regular files (directories, symlinks, and 
 
 The `signature` field is reserved for future image-signing verification and is always `null` today. Report mode does not set a non-zero exit code based on findings — pipe to `jq` and gate however your CI needs.
 
+### Vulnerability scanning
+
+`--scan <trivy|grype|custom>` (requires `--report`) extracts the image's merged filesystem to a temporary directory and runs an external scanner against it, embedding the result:
+
+```json
+"scan": {
+  "tool": "trivy",
+  "command": "trivy rootfs --format json /tmp/imgchk-scan-xyz",
+  "exit_code": 0,
+  "output": { "...": "trivy's own JSON output, embedded as-is" },
+  "error": null
+}
+```
+
+`trivy` and `grype` are built-in presets (`trivy rootfs --format json {path}` and `grype dir:{path} -o json` respectively). For any other scanner, use `--scan custom --scan-cmd '<template>'` with `{path}` as a placeholder for the extracted directory — for example:
+
+```bash
+imgchk nginx:latest --report --scan custom --scan-cmd 'mytool scan {path} --format json'
+```
+
+`output` holds the scanner's own JSON if its stdout parses as JSON, or a raw string otherwise. `error` is `null` on a normal run — a scanner exiting non-zero because it *found* vulnerabilities is not an imgchk-level error — and is only set when imgchk couldn't run the command at all (binary not found, failed to spawn). A scan failure never blocks the rest of the report; `layers`/`suspicious_files` always print. imgchk doesn't interpret or normalize scanner output — pipe `scan.output` through `jq` same as everything else.
+
 ### jq recipes
 
 ```bash
@@ -180,6 +204,9 @@ imgchk nginx:latest --report | jq '[.layers[] | select(.size > 50000000)] | sort
 
 # Just the counts: how many suspicious files per layer
 imgchk nginx:latest --report | jq '.layers[] | {index, suspicious_count: (.suspicious_files | length)}'
+
+# Pull out scan findings, guarding against a failed/missing scanner
+imgchk nginx:latest --report --scan trivy | jq 'if .scan.error then error(.scan.error) else .scan.output end'
 ```
 
 ## Environment Variables
