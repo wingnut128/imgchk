@@ -8,7 +8,7 @@ use crate::tree::FileTree;
 
 use super::{
     BlobStore, CredentialResolver, DefaultCredentials, FsBlobStore, ImageConfig, ImageInfo,
-    ImageSource, LayerInfo, parse_history,
+    ImageSource, LayerInfo, parse_full_history, parse_history,
 };
 
 /// Loads images from OCI/Docker registries.
@@ -112,6 +112,7 @@ async fn load(
     let image_config: ImageConfig = serde_json::from_slice(&config_bytes)?;
 
     let (commands, created_times) = parse_history(&image_config);
+    let history = parse_full_history(&image_config);
 
     let diff_ids = image_config
         .rootfs
@@ -242,5 +243,6 @@ async fn load(
             .unwrap_or_else(|| "unknown".into()),
         os: image_config.os.unwrap_or_else(|| "unknown".into()),
         source: reference.to_string(),
+        history,
     })
 }

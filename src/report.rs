@@ -13,6 +13,8 @@ pub struct ReportImage {
     pub total_size: u64,
     pub signature: Option<()>,
     pub scan: Option<ScanResult>,
+    pub history: Vec<crate::image::HistoryStep>,
+    pub dockerfile: String,
     pub layers: Vec<ReportLayer>,
 }
 
@@ -47,6 +49,8 @@ pub fn build_report(image: &ImageInfo) -> ReportImage {
         total_size: image.total_size,
         signature: None,
         scan: None,
+        history: image.history.clone(),
+        dockerfile: crate::dockerfile::reconstruct(&image.history),
         layers: image
             .layers
             .iter()
@@ -164,6 +168,7 @@ mod tests {
             architecture: "amd64".to_string(),
             os: "linux".to_string(),
             source: "nginx:latest".to_string(),
+            history: Vec::new(),
         };
 
         let report = build_report(&image);
@@ -188,6 +193,7 @@ mod tests {
             architecture: "amd64".to_string(),
             os: "linux".to_string(),
             source: "alpine:3.19".to_string(),
+            history: Vec::new(),
         };
 
         let json = serde_json::to_string(&build_report(&image)).unwrap();
@@ -402,5 +408,34 @@ mod tests {
         let findings = scan_suspicious(&tree);
 
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn build_report_includes_history_and_dockerfile() {
+        use crate::image::{HistoryStep, ImageInfo};
+        let image = ImageInfo {
+            layers: vec![],
+            total_size: 0,
+            architecture: "amd64".into(),
+            os: "linux".into(),
+            source: "test:latest".into(),
+            history: vec![
+                HistoryStep {
+                    created_by: "/bin/sh -c #(nop)  ENV A=1".into(),
+                    empty_layer: true,
+                    created: "t0".into(),
+                },
+                HistoryStep {
+                    created_by: "/bin/sh -c apt-get update".into(),
+                    empty_layer: false,
+                    created: "t1".into(),
+                },
+            ],
+        };
+        let report = build_report(&image);
+        assert_eq!(report.history.len(), 2);
+        assert_eq!(report.history[0].created_by, "/bin/sh -c #(nop)  ENV A=1");
+        assert!(report.dockerfile.contains("ENV A=1"));
+        assert!(report.dockerfile.contains("RUN apt-get update"));
     }
 }

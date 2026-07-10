@@ -1,5 +1,6 @@
 mod action;
 mod command_format;
+mod dockerfile;
 mod extract;
 mod image;
 mod report;
@@ -41,6 +42,9 @@ EXAMPLES:
     Print a human-readable vulnerability summary (no --report needed):
         imgchk nginx:latest --scan trivy
 
+    Reconstruct an approximate Dockerfile from the image's build history:
+        imgchk nginx:latest --dockerfile
+
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
     Tab             Cycle pane focus (Layers → Files → Details)
@@ -58,6 +62,12 @@ ENVIRONMENT:
     IMGCHK_REGISTRY_TOKEN   Registry password/token
     IMGCHK_CACHE_DIR        Override blob cache directory (~/.cache/imgchk/blobs/)
     IMGCHK_CACHE_MAX_MB     Max cache size in MB (default: 10240)";
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum DockerfileMode {
+    Reconstructed,
+    Raw,
+}
 
 /// Interactive TUI for inspecting OCI/Docker container images.
 ///
@@ -97,6 +107,20 @@ struct Cli {
     /// Use {path} as a placeholder for the extracted rootfs directory.
     #[arg(long)]
     scan_cmd: Option<String>,
+
+    /// Print the image's build instructions instead of launching the TUI.
+    /// Bare --dockerfile prints an approximate (best-effort, not guaranteed
+    /// buildable) Dockerfile; --dockerfile=raw prints the verbatim ordered
+    /// command list. Ignored for output selection when --report is set
+    /// (--report always includes history + dockerfile JSON fields).
+    #[arg(
+        long,
+        value_enum,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "reconstructed"
+    )]
+    dockerfile: Option<DockerfileMode>,
 }
 
 /// Cross-flag rules clap's declarative attributes can't express (they
@@ -111,9 +135,20 @@ fn validate_scan_args(cli: &Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `--dockerfile` and `--scan` both want to own stdout in their standalone
+/// (non-`--report`) human modes; combining them without `--report` would
+/// silently ignore one, so reject it.
+fn validate_dockerfile_args(cli: &Cli) -> anyhow::Result<()> {
+    if cli.dockerfile.is_some() && cli.scan.is_some() && !cli.report {
+        anyhow::bail!("--dockerfile and --scan cannot be combined without --report");
+    }
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     validate_scan_args(&cli)?;
+    validate_dockerfile_args(&cli)?;
 
     let image_ref = match cli.image {
         Some(ref img) => img.as_str(),
@@ -134,6 +169,19 @@ fn main() -> anyhow::Result<()> {
 
     if image.layers.is_empty() {
         anyhow::bail!("No layers found in image");
+    }
+
+    // With --report, fall through: the report branch already emits
+    // history + dockerfile.
+    if let Some(mode) = cli.dockerfile
+        && !cli.report
+    {
+        let text = match mode {
+            DockerfileMode::Reconstructed => dockerfile::reconstruct(&image.history),
+            DockerfileMode::Raw => dockerfile::render_raw(&image.history),
+        };
+        println!("{text}");
+        return Ok(());
     }
 
     if let Some(tool) = cli.scan {
@@ -223,5 +271,36 @@ mod tests {
             "foo {path}",
         ]);
         assert!(validate_scan_args(&cli).is_ok());
+    }
+
+    #[test]
+    fn cli_dockerfile_bare_defaults_to_reconstructed() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--dockerfile"]);
+        assert_eq!(cli.dockerfile, Some(DockerfileMode::Reconstructed));
+    }
+
+    #[test]
+    fn cli_dockerfile_raw_parses() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--dockerfile=raw"]);
+        assert_eq!(cli.dockerfile, Some(DockerfileMode::Raw));
+    }
+
+    #[test]
+    fn validate_dockerfile_args_rejects_dockerfile_plus_scan_without_report() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--dockerfile", "--scan", "trivy"]);
+        assert!(validate_dockerfile_args(&cli).is_err());
+    }
+
+    #[test]
+    fn validate_dockerfile_args_allows_dockerfile_plus_scan_with_report() {
+        let cli = Cli::parse_from([
+            "imgchk",
+            "nginx:latest",
+            "--report",
+            "--dockerfile",
+            "--scan",
+            "trivy",
+        ]);
+        assert!(validate_dockerfile_args(&cli).is_ok());
     }
 }
