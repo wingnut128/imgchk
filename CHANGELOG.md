@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.7](https://github.com/wingnut128/imgchk/compare/v0.4.6...v0.4.7) - 2026-07-10
+
+### Added
+
+- --dockerfile — extract & reconstruct build instructions ([#86](https://github.com/wingnut128/imgchk/pull/86))
+
 ## [0.4.6](https://github.com/wingnut128/imgchk/compare/v0.4.5...v0.4.6) - 2026-07-10
 
 ### Added
