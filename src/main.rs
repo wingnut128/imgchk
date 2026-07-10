@@ -38,6 +38,9 @@ EXAMPLES:
     Use any scanner via a custom command ({path} is the extracted rootfs dir):
         imgchk nginx:latest --report --scan custom --scan-cmd 'mytool scan {path} --json'
 
+    Print a human-readable vulnerability summary (no --report needed):
+        imgchk nginx:latest --scan trivy
+
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
     Tab             Cycle pane focus (Layers → Files → Details)
