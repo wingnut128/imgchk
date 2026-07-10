@@ -42,6 +42,9 @@ EXAMPLES:
     Print a human-readable vulnerability summary (no --report needed):
         imgchk nginx:latest --scan trivy
 
+    Reconstruct an approximate Dockerfile from the image's build history:
+        imgchk nginx:latest --dockerfile
+
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
     Tab             Cycle pane focus (Layers → Files → Details)

@@ -7,6 +7,7 @@ A terminal UI tool for inspecting Docker and OCI container images. Browse layers
 - **Registry & tarball loading** — pull images from Docker Hub, GHCR, or any OCI registry, or load from `docker save` tarballs
 - **Non-interactive report mode** — `--report` prints a JSON analysis (layer metadata + suspicious-file findings) to stdout for CI/scripting use
 - **Pluggable vulnerability scanning** — `--scan trivy`/`--scan grype`/`--scan custom` runs an external scanner against the merged image filesystem; standalone `--scan` prints a human-readable summary, and `--report --scan` embeds the raw output plus a normalized `scan.summary` in the JSON
+- **Dockerfile reconstruction** — `--dockerfile` prints a best-effort reconstructed Dockerfile from the image's build history; `--dockerfile=raw` prints the verbatim ordered command list. `--report` always includes both a `history` array and a rendered `dockerfile` string
 - **Layer browser** — navigate layers with metadata (size, digest, creation command)
 - **File tree explorer** — browse each layer's filesystem with expand/collapse, selection, and cumulative view
 - **Multiple export formats** — extract as tar.gz, tar, squashfs, or directory via [ocirender](https://crates.io/crates/ocirender)
@@ -198,6 +199,34 @@ imgchk nginx:latest --report --scan custom --scan-cmd 'mytool scan {path} --form
 
 **Security note:** imgchk shells out to whatever `trivy`/`grype` binary is on `PATH` — it does not pin a version or verify checksums. Run a known-good scanner version and verify its checksum before relying on it; Trivy had a supply-chain compromise in early 2026 (malicious `v0.69.4`–`v0.69.6` releases). The trust boundary here is your installed scanner binary, not imgchk.
 
+### Build history & Dockerfile reconstruction
+
+`--dockerfile` reads the image's build history and prints to stdout instead of launching the TUI. Two modes:
+
+- **Reconstructed** (`imgchk nginx:latest --dockerfile`, the default when the flag is bare): maps each history entry to an approximate Dockerfile instruction — `RUN`/`CMD`/`ENV`/`WORKDIR`/etc. detected by keyword, with anything unrecognized falling back to `RUN`. A header comment marks the output as reconstructed.
+- **Raw** (`imgchk nginx:latest --dockerfile=raw`): prints the verbatim, ordered `created_by` string for every history entry (including empty-layer instructions like `ENV`/`CMD`), one per line — no interpretation.
+
+`--report` always includes both fields, regardless of whether `--dockerfile` is passed:
+
+```json
+{
+  "history": [
+    {"created_by": "/bin/sh -c #(nop)  ENV PATH=/usr/local/bin", "empty_layer": true, "created": "2026-01-01T00:00:00Z"},
+    {"created_by": "/bin/sh -c apt-get update && apt-get install -y curl", "empty_layer": false, "created": "2026-01-01T00:00:05Z"}
+  ],
+  "dockerfile": "# Reconstructed by imgchk from image build history.\n...\nENV PATH=/usr/local/bin\nRUN apt-get update && apt-get install -y curl\n"
+}
+```
+
+**Limitations — this is best-effort, not a guaranteed-buildable Dockerfile:**
+
+- No `FROM` line — the base image boundary is not recoverable from history alone.
+- `COPY`/`ADD` build context is not stored in the image; legacy-style entries are annotated `<context unavailable>` rather than a real source path.
+- BuildKit and legacy (classic builder) history differ in shape and detail, so reconstruction quality varies by how the image was built.
+- Squashed images carry little or no history — reconstruction may produce only a handful of lines, or none.
+
+`--dockerfile` combined with `--scan` requires `--report` (both otherwise want to own stdout); `imgchk nginx:latest --dockerfile --scan trivy` without `--report` is rejected with an error.
+
 ### jq recipes
 
 ```bash
@@ -224,6 +253,9 @@ imgchk nginx:latest --report --scan trivy | jq 'if .scan.error then error(.scan.
 
 # Severity counts from a scan
 imgchk nginx:latest --report --scan trivy | jq '.scan.summary.counts'
+
+# Print the reconstructed Dockerfile from a report
+imgchk nginx:latest --report | jq -r '.dockerfile'
 ```
 
 ## Environment Variables
