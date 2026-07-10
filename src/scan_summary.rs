@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::scan::ScanTool;
+
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -87,9 +89,133 @@ impl ScanSummary {
     }
 }
 
+pub fn summarize(tool: ScanTool, raw: &serde_json::Value) -> Option<ScanSummary> {
+    match tool {
+        ScanTool::Trivy => parse_trivy(raw),
+        ScanTool::Grype => parse_grype(raw),
+        ScanTool::Custom => None,
+    }
+}
+
+fn parse_trivy(raw: &serde_json::Value) -> Option<ScanSummary> {
+    let results = raw.get("Results")?.as_array()?;
+    let mut vulns = Vec::new();
+    for result in results {
+        let Some(entries) = result.get("Vulnerabilities").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for entry in entries {
+            let (Some(id), Some(package), Some(installed)) = (
+                entry.get("VulnerabilityID").and_then(|v| v.as_str()),
+                entry.get("PkgName").and_then(|v| v.as_str()),
+                entry.get("InstalledVersion").and_then(|v| v.as_str()),
+            ) else {
+                continue;
+            };
+            let fixed_version = entry
+                .get("FixedVersion")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let severity = entry
+                .get("Severity")
+                .and_then(|v| v.as_str())
+                .map(Severity::from_label)
+                .unwrap_or(Severity::Unknown);
+            vulns.push(Vulnerability {
+                id: id.to_string(),
+                package: package.to_string(),
+                installed_version: installed.to_string(),
+                fixed_version,
+                severity,
+            });
+        }
+    }
+    Some(ScanSummary::from_vulns(vulns))
+}
+
+fn parse_grype(_raw: &serde_json::Value) -> Option<ScanSummary> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scan::ScanTool;
+
+    #[test]
+    fn summarize_trivy_maps_fields_and_counts() {
+        let raw = serde_json::json!({
+            "Results": [{
+                "Vulnerabilities": [
+                    {
+                        "VulnerabilityID": "CVE-2025-1234",
+                        "PkgName": "openssl",
+                        "InstalledVersion": "3.0.11",
+                        "FixedVersion": "3.0.14",
+                        "Severity": "CRITICAL"
+                    },
+                    {
+                        "VulnerabilityID": "CVE-2025-5678",
+                        "PkgName": "libcurl",
+                        "InstalledVersion": "8.4.0",
+                        "FixedVersion": "",
+                        "Severity": "HIGH"
+                    }
+                ]
+            }]
+        });
+        let summary = summarize(ScanTool::Trivy, &raw).expect("trivy should parse");
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.counts.critical, 1);
+        assert_eq!(summary.counts.high, 1);
+        let crit = &summary.vulnerabilities[0];
+        assert_eq!(crit.id, "CVE-2025-1234");
+        assert_eq!(crit.package, "openssl");
+        assert_eq!(crit.installed_version, "3.0.11");
+        assert_eq!(crit.fixed_version.as_deref(), Some("3.0.14"));
+        // Empty FixedVersion -> None.
+        let high = &summary.vulnerabilities[1];
+        assert_eq!(high.fixed_version, None);
+    }
+
+    #[test]
+    fn summarize_trivy_skips_entries_missing_required_fields() {
+        let raw = serde_json::json!({
+            "Results": [{
+                "Vulnerabilities": [
+                    { "PkgName": "x", "InstalledVersion": "1", "Severity": "LOW" }
+                ]
+            }]
+        });
+        let summary = summarize(ScanTool::Trivy, &raw).expect("still a recognized shape");
+        assert_eq!(summary.total, 0);
+    }
+
+    #[test]
+    fn summarize_trivy_unknown_severity_maps_to_unknown() {
+        let raw = serde_json::json!({
+            "Results": [{
+                "Vulnerabilities": [
+                    { "VulnerabilityID": "CVE-9", "PkgName": "p", "InstalledVersion": "1", "Severity": "WEIRD" }
+                ]
+            }]
+        });
+        let summary = summarize(ScanTool::Trivy, &raw).unwrap();
+        assert_eq!(summary.counts.unknown, 1);
+    }
+
+    #[test]
+    fn summarize_trivy_unrecognized_structure_returns_none() {
+        let raw = serde_json::json!({ "nope": true });
+        assert_eq!(summarize(ScanTool::Trivy, &raw), None);
+    }
+
+    #[test]
+    fn summarize_custom_returns_none() {
+        let raw = serde_json::json!({ "Results": [] });
+        assert_eq!(summarize(ScanTool::Custom, &raw), None);
+    }
 
     #[test]
     fn from_label_is_case_insensitive() {
