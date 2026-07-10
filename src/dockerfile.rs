@@ -78,7 +78,7 @@ fn normalize(created_by: &str) -> String {
 
 fn starts_with_instruction(line: &str) -> bool {
     let first = line.split_whitespace().next().unwrap_or("");
-    INSTRUCTIONS.iter().any(|k| k.eq_ignore_ascii_case(first))
+    INSTRUCTIONS.contains(&first)
 }
 
 /// Detect the legacy `COPY dir:<hash> in <dest>` / `ADD file:<hash> in <dest>`
@@ -185,5 +185,18 @@ mod tests {
     #[test]
     fn render_raw_empty_history() {
         assert!(render_raw(&[]).contains("No build history available"));
+    }
+
+    #[test]
+    fn reconstruct_wraps_lowercase_env_shell_command_in_run() {
+        // `env VAR=val cmd` is a shell idiom, not a Dockerfile ENV instruction.
+        // Its first token "env" must not case-insensitively match "ENV".
+        let history = vec![step(
+            "/bin/sh -c env DEBIAN_FRONTEND=noninteractive apt-get install -y curl",
+            false,
+        )];
+        let out = reconstruct(&history);
+        assert!(out.contains("RUN env DEBIAN_FRONTEND=noninteractive apt-get install -y curl"));
+        assert!(!out.lines().any(|l| l.starts_with("env ")));
     }
 }
