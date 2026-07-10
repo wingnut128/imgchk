@@ -135,10 +135,13 @@ Per step, in order:
    single spaces (reuse `command_format::clean_command`, which already strips
    `/bin/sh -c ` and `#(nop) ` and collapses whitespace).
 2. If the normalized text is empty, skip it.
-3. If it starts (case-insensitive) with a known instruction keyword — `ENV`,
-   `CMD`, `ENTRYPOINT`, `EXPOSE`, `WORKDIR`, `USER`, `LABEL`, `VOLUME`, `ARG`,
-   `MAINTAINER`, `COPY`, `ADD`, `RUN`, `HEALTHCHECK`, `STOPSIGNAL`,
-   `SHELL` — emit it as-is (it already reads as that instruction).
+3. If its first token is an exact **uppercase** match for a known instruction
+   keyword — `ENV`, `CMD`, `ENTRYPOINT`, `EXPOSE`, `WORKDIR`, `USER`, `LABEL`,
+   `VOLUME`, `ARG`, `MAINTAINER`, `COPY`, `ADD`, `RUN`, `HEALTHCHECK`,
+   `STOPSIGNAL`, `SHELL`, `ONBUILD` — emit it as-is (it already reads as that
+   instruction). The match is case-sensitive on purpose: real build history
+   emits instructions uppercase, while a lowercase first token (e.g. the shell
+   idiom `env VAR=val cmd`) is part of a `RUN` command, not an instruction.
 4. Else emit `RUN <normalized>`.
 5. **COPY/ADD special case**: if the line matches the legacy pattern
    `COPY dir:<hash> in <dest>` or `ADD file:<hash> in <dest>` (i.e. contains a
