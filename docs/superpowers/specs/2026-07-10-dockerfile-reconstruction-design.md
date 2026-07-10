@@ -21,7 +21,7 @@ Add a `--dockerfile` flag that surfaces an image's build steps two ways:
 
 - **Reconstructed Dockerfile** (default): a best-effort, annotated Dockerfile
   rendered from the full ordered history.
-- **Raw command list** (`--dockerfile raw`): the verbatim ordered
+- **Raw command list** (`--dockerfile=raw`): the verbatim ordered
   `created_by` strings, including empty-layer instructions.
 
 In `--report`, the same data is exposed as JSON: an ordered `history` array and
@@ -67,9 +67,11 @@ New flag on `Cli` (`src/main.rs`):
 ```
 
 - Implemented as a `clap` value-enum with an optional value: bare
-  `--dockerfile` selects `reconstructed`; `--dockerfile raw` selects `raw`.
-  (clap: `value_enum`, `num_args = 0..=1`, `require_equals = false`,
-  `default_missing_value = "reconstructed"`.)
+  `--dockerfile` selects `reconstructed`; `--dockerfile=raw` selects `raw`.
+  (clap: `value_enum`, `num_args = 0..=1`, `require_equals = true`,
+  `default_missing_value = "reconstructed"`.) `require_equals = true` is
+  required so the value form is `--dockerfile=raw`, not `--dockerfile raw` —
+  the space form would ambiguously consume the positional image reference.
 - Standalone (no `--report`): prints the selected text to stdout, no TUI.
 - With `--report`: the `--dockerfile` value is ignored for output selection —
   `--report` always emits both `history` and `dockerfile` JSON fields (see
@@ -249,7 +251,7 @@ style, to avoid silently ignoring one flag.
   - header comment block present
 - `render_raw`: verbatim lines in order incl. empty-layer entries; empty
   history → single comment.
-- `main.rs`: `--dockerfile` parses (bare → reconstructed); `--dockerfile raw`
+- `main.rs`: `--dockerfile` parses (bare → reconstructed); `--dockerfile=raw`
   parses; `--dockerfile` + `--scan` without `--report` errors.
 
 ## Documentation
