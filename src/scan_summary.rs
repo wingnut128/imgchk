@@ -20,6 +20,7 @@ impl Severity {
             "high" => Severity::High,
             "medium" => Severity::Medium,
             "low" => Severity::Low,
+            "negligible" => Severity::Low,
             _ => Severity::Unknown,
         }
     }
@@ -246,10 +247,17 @@ pub fn render_summary(image_ref: &str, result: &ScanResult) -> String {
 
     let lower = c.medium + c.low + c.unknown;
     if lower > 0 {
-        out.push_str(&format!(
-            "  … {lower} more ({} medium, {} low, {} unknown) — run with --report for full JSON\n",
-            c.medium, c.low, c.unknown
-        ));
+        if shown.is_empty() {
+            out.push_str(&format!(
+                "  {lower} lower-severity findings ({} medium, {} low, {} unknown) — run with --report for full JSON\n",
+                c.medium, c.low, c.unknown
+            ));
+        } else {
+            out.push_str(&format!(
+                "  … {lower} more ({} medium, {} low, {} unknown) — run with --report for full JSON\n",
+                c.medium, c.low, c.unknown
+            ));
+        }
     }
 
     out.trim_end().to_string()
@@ -420,6 +428,12 @@ mod tests {
     }
 
     #[test]
+    fn from_label_negligible_maps_to_low() {
+        assert_eq!(Severity::from_label("Negligible"), Severity::Low);
+        assert_eq!(Severity::from_label("NEGLIGIBLE"), Severity::Low);
+    }
+
+    #[test]
     fn severity_serializes_lowercase() {
         let json = serde_json::to_string(&Severity::Critical).unwrap();
         assert_eq!(json, "\"critical\"");
@@ -504,5 +518,31 @@ mod tests {
     fn summarize_grype_unrecognized_structure_returns_none() {
         let raw = serde_json::json!({ "Results": [] });
         assert_eq!(summarize(ScanTool::Grype, &raw), None);
+    }
+
+    #[test]
+    fn render_footer_without_table_omits_more_wording() {
+        let summary = ScanSummary::from_vulns(vec![
+            Vulnerability {
+                id: "CVE-2025-1111".into(),
+                package: "zlib".into(),
+                installed_version: "1.2".into(),
+                fixed_version: None,
+                severity: Severity::Medium,
+            },
+            Vulnerability {
+                id: "CVE-2025-2222".into(),
+                package: "libpng".into(),
+                installed_version: "1.6".into(),
+                fixed_version: None,
+                severity: Severity::Low,
+            },
+        ]);
+        let out = render_summary("nginx:latest", &result_with(Some(summary), None));
+        assert!(!out.contains("more"));
+        assert!(out.contains("1 medium"));
+        assert!(out.contains("1 low"));
+        assert!(out.contains("0 unknown"));
+        assert!(out.contains("--report"));
     }
 }
