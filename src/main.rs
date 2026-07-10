@@ -4,6 +4,7 @@ mod extract;
 mod image;
 mod report;
 mod scan;
+mod scan_summary;
 mod selection;
 mod tree;
 mod ui;
