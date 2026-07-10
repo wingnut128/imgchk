@@ -4,6 +4,7 @@ mod extract;
 mod image;
 mod report;
 mod scan;
+mod scan_summary;
 mod selection;
 mod tree;
 mod ui;
@@ -36,6 +37,9 @@ EXAMPLES:
 
     Use any scanner via a custom command ({path} is the extracted rootfs dir):
         imgchk nginx:latest --report --scan custom --scan-cmd 'mytool scan {path} --json'
+
+    Print a human-readable vulnerability summary (no --report needed):
+        imgchk nginx:latest --scan trivy
 
 TUI KEYBINDINGS:
     j/k, Up/Down    Navigate layers or files
@@ -83,10 +87,10 @@ struct Cli {
     #[arg(long)]
     report: bool,
 
-    /// Run an external scanner against the merged image filesystem and
-    /// embed its output in the report (trivy, grype, or custom). Requires
-    /// --report.
-    #[arg(long, value_enum, requires = "report")]
+    /// Run an external scanner against the merged image filesystem
+    /// (trivy, grype, or custom). Without --report, prints a human-readable
+    /// summary; with --report, embeds a normalized summary in the JSON.
+    #[arg(long, value_enum)]
     scan: Option<scan::ScanTool>,
 
     /// Custom scanner command template, required iff --scan=custom.
@@ -96,9 +100,7 @@ struct Cli {
 }
 
 /// Cross-flag rules clap's declarative attributes can't express (they
-/// depend on `scan`'s specific value, not just presence). `--scan` requiring
-/// `--report` is instead handled by clap's `requires = "report"` attribute
-/// on the `scan` field above.
+/// depend on `scan`'s specific value, not just presence).
 fn validate_scan_args(cli: &Cli) -> anyhow::Result<()> {
     if cli.scan == Some(scan::ScanTool::Custom) && cli.scan_cmd.is_none() {
         anyhow::bail!("--scan=custom requires --scan-cmd");
@@ -134,11 +136,23 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("No layers found in image");
     }
 
-    if cli.report {
-        let mut report = report::build_report(&image);
-        if let Some(tool) = cli.scan {
-            report.scan = Some(scan::run_scan(tool, cli.scan_cmd.as_deref(), &image.layers));
+    if let Some(tool) = cli.scan {
+        let mut result = scan::run_scan(tool, cli.scan_cmd.as_deref(), &image.layers);
+        if let Some(output) = &result.output {
+            result.summary = scan_summary::summarize(tool, output);
         }
+        if cli.report {
+            let mut report = report::build_report(&image);
+            report.scan = Some(result);
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            println!("{}", scan_summary::render_summary(image_ref, &result));
+        }
+        return Ok(());
+    }
+
+    if cli.report {
+        let report = report::build_report(&image);
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
     }
@@ -165,9 +179,10 @@ mod tests {
     }
 
     #[test]
-    fn cli_scan_requires_report() {
-        let result = Cli::try_parse_from(["imgchk", "nginx:latest", "--scan", "trivy"]);
-        assert!(result.is_err());
+    fn cli_scan_standalone_parses() {
+        let cli = Cli::parse_from(["imgchk", "nginx:latest", "--scan", "trivy"]);
+        assert_eq!(cli.scan, Some(scan::ScanTool::Trivy));
+        assert!(!cli.report);
     }
 
     #[test]
