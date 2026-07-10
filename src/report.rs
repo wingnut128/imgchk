@@ -164,6 +164,7 @@ mod tests {
             architecture: "amd64".to_string(),
             os: "linux".to_string(),
             source: "nginx:latest".to_string(),
+            history: Vec::new(),
         };
 
         let report = build_report(&image);
@@ -188,6 +189,7 @@ mod tests {
             architecture: "amd64".to_string(),
             os: "linux".to_string(),
             source: "alpine:3.19".to_string(),
+            history: Vec::new(),
         };
 
         let json = serde_json::to_string(&build_report(&image)).unwrap();

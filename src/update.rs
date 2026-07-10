@@ -272,6 +272,7 @@ mod tests {
             architecture: "amd64".into(),
             total_size: layers.iter().map(|l| l.size).sum(),
             layers,
+            history: Vec::new(),
         };
         App::new(image, None)
     }

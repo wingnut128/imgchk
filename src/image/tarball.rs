@@ -7,7 +7,10 @@ use serde::Deserialize;
 
 use crate::tree::FileTree;
 
-use super::{ImageConfig, ImageInfo, ImageSource, LayerInfo, MEDIA_TYPE_LAYER_GZIP, parse_history};
+use super::{
+    ImageConfig, ImageInfo, ImageSource, LayerInfo, MEDIA_TYPE_LAYER_GZIP, parse_full_history,
+    parse_history,
+};
 
 #[derive(Deserialize)]
 struct DockerManifest {
@@ -101,6 +104,7 @@ fn load_docker_archive(path: &Path) -> anyhow::Result<ImageInfo> {
         .unwrap_or_default();
 
     let (commands, created_times) = parse_history(&config);
+    let history = parse_full_history(&config);
 
     let diff_ids = config
         .rootfs
@@ -149,6 +153,7 @@ fn load_docker_archive(path: &Path) -> anyhow::Result<ImageInfo> {
         architecture: config.architecture.unwrap_or_else(|| "unknown".into()),
         os: config.os.unwrap_or_else(|| "unknown".into()),
         source: path.display().to_string(),
+        history,
     })
 }
 
@@ -181,6 +186,7 @@ fn load_single_layer(path: &Path) -> anyhow::Result<ImageInfo> {
         architecture: "unknown".into(),
         os: "unknown".into(),
         source: path.display().to_string(),
+        history: Vec::new(),
     })
 }
 

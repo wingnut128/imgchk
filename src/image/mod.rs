@@ -36,6 +36,9 @@ pub struct ImageInfo {
     pub architecture: String,
     pub os: String,
     pub source: String,
+    // Consumed by Dockerfile reconstruction (upcoming task); not yet read.
+    #[allow(dead_code)]
+    pub history: Vec<HistoryStep>,
 }
 
 /// A source that can produce an [`ImageInfo`] from a string reference
@@ -97,6 +100,27 @@ pub(crate) fn parse_history(config: &ImageConfig) -> (Vec<String>, Vec<String>) 
     (commands, created_times)
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct HistoryStep {
+    pub created_by: String,
+    pub empty_layer: bool,
+    pub created: String,
+}
+
+pub(crate) fn parse_full_history(config: &ImageConfig) -> Vec<HistoryStep> {
+    let mut steps = Vec::new();
+    if let Some(history) = &config.history {
+        for h in history {
+            steps.push(HistoryStep {
+                created_by: h.created_by.clone().unwrap_or_default(),
+                empty_layer: h.empty_layer.unwrap_or(false),
+                created: h.created.clone().unwrap_or_default(),
+            });
+        }
+    }
+    steps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +148,39 @@ mod tests {
     fn is_tarball_false_for_registry_ref() {
         assert!(!is_tarball("nginx:latest"));
         assert!(!is_tarball("ghcr.io/org/app:v1.2"));
+    }
+
+    #[test]
+    fn parse_full_history_keeps_empty_layers_and_order() {
+        let config = ImageConfig {
+            history: Some(vec![
+                HistoryEntry {
+                    created_by: Some("/bin/sh -c #(nop)  ENV A=1".into()),
+                    created: Some("t0".into()),
+                    empty_layer: Some(true),
+                },
+                HistoryEntry {
+                    created_by: Some("/bin/sh -c apt-get update".into()),
+                    created: Some("t1".into()),
+                    empty_layer: Some(false),
+                },
+                HistoryEntry {
+                    created_by: None,
+                    created: None,
+                    empty_layer: None,
+                },
+            ]),
+            ..Default::default()
+        };
+        let steps = parse_full_history(&config);
+        assert_eq!(steps.len(), 3);
+        assert!(steps[0].empty_layer);
+        assert_eq!(steps[0].created_by, "/bin/sh -c #(nop)  ENV A=1");
+        assert!(!steps[1].empty_layer);
+        assert_eq!(steps[1].created, "t1");
+        // Missing fields default cleanly.
+        assert_eq!(steps[2].created_by, "");
+        assert!(!steps[2].empty_layer);
+        assert_eq!(steps[2].created, "");
     }
 }
