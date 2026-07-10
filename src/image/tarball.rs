@@ -241,13 +241,17 @@ mod tests {
     }
 
     fn write_temp(bytes: &[u8], suffix: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        // Tests run in parallel and share this process's PID, so a timestamp
+        // alone can collide when two `write_temp` calls land in the same tick.
+        // A process-wide counter guarantees each temp file gets a unique name.
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+
         let mut path = std::env::temp_dir();
         let pid = std::process::id();
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        path.push(format!("imgchk-tarball-test-{pid}-{nanos}{suffix}"));
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        path.push(format!("imgchk-tarball-test-{pid}-{seq}{suffix}"));
         std::fs::write(&path, bytes).unwrap();
         path
     }
