@@ -54,7 +54,6 @@ pub fn reconstruct(history: &[HistoryStep]) -> String {
 }
 
 /// Render the verbatim ordered command list (one created_by per line).
-#[allow(dead_code)]
 pub fn render_raw(history: &[HistoryStep]) -> String {
     if history.is_empty() {
         return "# No build history available in this image.".to_string();
