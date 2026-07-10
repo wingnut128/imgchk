@@ -1,5 +1,6 @@
 use serde::Serialize;
 
+use crate::command_format::strip_control;
 use crate::scan::ScanResult;
 use crate::scan::ScanTool;
 
@@ -199,30 +200,48 @@ pub fn render_summary(image_ref: &str, result: &ScanResult) -> String {
         return format!("{header}\n{counts_line}\n  No vulnerabilities found.");
     }
 
-    let shown: Vec<&Vulnerability> = summary
+    // Sanitize scanner-derived fields once: a malicious image can ship
+    // packages with attacker-chosen names/versions, so these strings must not
+    // inject terminal escape sequences when printed. Widths and rows both use
+    // the sanitized values.
+    struct Row {
+        severity: &'static str,
+        id: String,
+        package: String,
+        installed: String,
+        fixed: String,
+    }
+    let rows: Vec<Row> = summary
         .vulnerabilities
         .iter()
         .filter(|v| matches!(v.severity, Severity::Critical | Severity::High))
+        .map(|v| Row {
+            severity: v.severity.label(),
+            id: strip_control(&v.id),
+            package: strip_control(&v.package),
+            installed: strip_control(&v.installed_version),
+            fixed: strip_control(v.fixed_version.as_deref().unwrap_or("—")),
+        })
         .collect();
 
     let mut out = format!("{header}\n{counts_line}\n");
 
-    if !shown.is_empty() {
-        let id_w = shown
+    if !rows.is_empty() {
+        let id_w = rows
             .iter()
-            .map(|v| v.id.len())
+            .map(|r| r.id.len())
             .chain(std::iter::once("CVE".len()))
             .max()
             .unwrap();
-        let pkg_w = shown
+        let pkg_w = rows
             .iter()
-            .map(|v| v.package.len())
+            .map(|r| r.package.len())
             .chain(std::iter::once("PACKAGE".len()))
             .max()
             .unwrap();
-        let inst_w = shown
+        let inst_w = rows
             .iter()
-            .map(|v| v.installed_version.len())
+            .map(|r| r.installed.len())
             .chain(std::iter::once("INSTALLED".len()))
             .max()
             .unwrap();
@@ -232,22 +251,17 @@ pub fn render_summary(image_ref: &str, result: &ScanResult) -> String {
             "  {:<8}  {:<id_w$}  {:<pkg_w$}  {:<inst_w$}  {}\n",
             "SEVERITY", "CVE", "PACKAGE", "INSTALLED", "FIXED"
         ));
-        for v in &shown {
-            let fixed = v.fixed_version.as_deref().unwrap_or("—");
+        for r in &rows {
             out.push_str(&format!(
                 "  {:<8}  {:<id_w$}  {:<pkg_w$}  {:<inst_w$}  {}\n",
-                v.severity.label(),
-                v.id,
-                v.package,
-                v.installed_version,
-                fixed
+                r.severity, r.id, r.package, r.installed, r.fixed
             ));
         }
     }
 
     let lower = c.medium + c.low + c.unknown;
     if lower > 0 {
-        if shown.is_empty() {
+        if rows.is_empty() {
             out.push_str(&format!(
                 "  {lower} lower-severity findings ({} medium, {} low, {} unknown) — run with --report for full JSON\n",
                 c.medium, c.low, c.unknown
@@ -277,6 +291,24 @@ mod tests {
             output: Some(serde_json::json!({"raw": true})),
             error,
         }
+    }
+
+    #[test]
+    fn render_strips_terminal_escapes_from_scanner_fields() {
+        // A malicious image can ship packages with attacker-chosen names, so
+        // scanner-derived strings must not inject terminal escape sequences.
+        let summary = ScanSummary::from_vulns(vec![Vulnerability {
+            id: "CVE-2025-\u{1b}[31m1".into(),
+            package: "openssl\u{07}".into(),
+            installed_version: "3.0\u{1b}]0;x".into(),
+            fixed_version: Some("3.1\u{1b}m".into()),
+            severity: Severity::Critical,
+        }]);
+        let out = render_summary("img", &result_with(Some(summary), None));
+        assert!(!out.contains('\u{1b}'));
+        assert!(!out.contains('\u{07}'));
+        // Content still present, just de-escaped.
+        assert!(out.contains("openssl"));
     }
 
     #[test]

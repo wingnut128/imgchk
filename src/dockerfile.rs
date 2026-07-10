@@ -1,4 +1,4 @@
-use crate::command_format::clean_command;
+use crate::command_format::{clean_command, strip_control};
 use crate::image::HistoryStep;
 
 const HEADER: &str = "\
@@ -60,7 +60,7 @@ pub fn render_raw(history: &[HistoryStep]) -> String {
     }
     history
         .iter()
-        .map(|s| s.created_by.clone())
+        .map(|s| strip_control(&s.created_by))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -69,11 +69,13 @@ pub fn render_raw(history: &[HistoryStep]) -> String {
 /// drop a trailing BuildKit ` # buildkit` marker.
 fn normalize(created_by: &str) -> String {
     let cleaned = clean_command(created_by);
-    cleaned
+    let trimmed = cleaned
         .strip_suffix("# buildkit")
         .unwrap_or(&cleaned)
-        .trim()
-        .to_string()
+        .trim();
+    // Strip control chars last: untrusted history must not inject terminal
+    // escape sequences into the printed Dockerfile.
+    strip_control(trimmed)
 }
 
 fn starts_with_instruction(line: &str) -> bool {
@@ -120,6 +122,27 @@ mod tests {
             empty_layer: empty,
             created: String::new(),
         }
+    }
+
+    #[test]
+    fn reconstruct_strips_terminal_escape_sequences() {
+        let history = vec![step(
+            "/bin/sh -c \u{1b}[2Jecho pwned\u{1b}]0;hijack\u{07}",
+            false,
+        )];
+        let out = reconstruct(&history);
+        assert!(!out.contains('\u{1b}'));
+        assert!(!out.contains('\u{07}'));
+        assert!(out.contains("RUN"));
+    }
+
+    #[test]
+    fn render_raw_strips_control_chars_and_flattens_newlines() {
+        let history = vec![step("RUN foo\u{1b}[31m\nbar", false)];
+        let out = render_raw(&history);
+        assert!(!out.contains('\u{1b}'));
+        // Embedded newline stripped → this one step stays a single line.
+        assert_eq!(out.lines().count(), 1);
     }
 
     #[test]
