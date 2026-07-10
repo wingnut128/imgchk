@@ -15,6 +15,10 @@ name: Auto-Merge
 #     of the `permissions:` block here — a malicious fork PR cannot grant
 #     itself merge rights by editing this file. The same-repo check below is
 #     belt-and-suspenders on top of that platform guarantee.
+#     release-plz Release PRs are EXCLUDED from this path (matched by the
+#     `release-plz-` head-branch prefix and the `chore: release` title) so
+#     cutting a release always requires an explicit human merge — the release
+#     is the one action worth a deliberate gate, since it tags and publishes.
 #
 # To trust an additional maintainer, add their GitHub login to
 # TRUSTED_ACTORS in the automerge-trusted job below.
@@ -70,7 +74,9 @@ jobs:
     # on readers knowing the platform-level guarantee.
     if: |
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(fromJSON('["wingnut128"]'), github.actor)
+      contains(fromJSON('["wingnut128"]'), github.actor) &&
+      !startsWith(github.event.pull_request.head.ref, 'release-plz-') &&
+      !startsWith(github.event.pull_request.title, 'chore: release')
     # GITHUB_TOKEN no longer performs the merge (see RELEASE_PLZ_TOKEN note
     # above) — this job needs no write access to the default token at all.
     permissions:
