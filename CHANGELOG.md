@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.9](https://github.com/wingnut128/imgchk/compare/v0.4.8...v0.4.9) - 2026-07-10
+
+### Other
+
+- authenticate dependabot auto-merge with dedicated DEPENDABOT_PAT (ENG-119) ([#92](https://github.com/wingnut128/imgchk/pull/92))
+- *(deps)* bump github/codeql-action/analyze from 4.36.2 to 4.36.3 ([#82](https://github.com/wingnut128/imgchk/pull/82))
+- *(deps)* bump github/codeql-action/init from 4.36.2 to 4.36.3 ([#81](https://github.com/wingnut128/imgchk/pull/81))
+- *(deps)* bump indicatif in the cargo-minor-and-patch group ([#80](https://github.com/wingnut128/imgchk/pull/80))
+- *(deps)* bump step-security/harden-runner from 2.19.4 to 2.20.0 ([#79](https://github.com/wingnut128/imgchk/pull/79))
+- *(deps)* bump taiki-e/install-action from 2.82.7 to 2.82.10 ([#78](https://github.com/wingnut128/imgchk/pull/78))
+
 ## [0.4.8](https://github.com/wingnut128/imgchk/compare/v0.4.7...v0.4.8) - 2026-07-10
 
 ### Fixed
