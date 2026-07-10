@@ -57,6 +57,15 @@ pub fn clean_command(cmd: &str) -> String {
     stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Remove control characters (ESC, other C0/C1 codes, embedded newlines/tabs)
+/// so untrusted image or scanner data can't inject terminal escape sequences
+/// when the value is printed to a terminal. Callers add their own line
+/// separators, so per-field stripping keeps layout intact and collapses any
+/// injected newline into a single line.
+pub fn strip_control(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
 /// Clean a command and truncate to `max_len` characters with an ellipsis.
 pub fn truncate_command(cmd: &str, max_len: usize) -> String {
     let cleaned = clean_command(cmd);
@@ -70,6 +79,28 @@ pub fn truncate_command(cmd: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── strip_control ──────────────────────────────────────────────────────
+
+    #[test]
+    fn strip_control_removes_escape_and_control_bytes() {
+        // Untrusted data embedding ANSI escapes + a bell.
+        let input = "pkg\u{1b}[31m\u{07}name";
+        let out = strip_control(input);
+        assert!(!out.contains('\u{1b}'));
+        assert!(!out.contains('\u{07}'));
+        assert_eq!(out, "pkg[31mname");
+    }
+
+    #[test]
+    fn strip_control_removes_embedded_newlines_and_tabs() {
+        assert_eq!(strip_control("a\nb\tc"), "abc");
+    }
+
+    #[test]
+    fn strip_control_leaves_normal_text_untouched() {
+        assert_eq!(strip_control("openssl 3.0.11"), "openssl 3.0.11");
+    }
 
     // ── format_command ─────────────────────────────────────────────────────
 
