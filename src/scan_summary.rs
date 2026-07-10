@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::scan::ScanResult;
 use crate::scan::ScanTool;
 
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -175,10 +176,163 @@ fn parse_grype(raw: &serde_json::Value) -> Option<ScanSummary> {
     Some(ScanSummary::from_vulns(vulns))
 }
 
+pub fn render_summary(image_ref: &str, result: &ScanResult) -> String {
+    if let Some(err) = &result.error {
+        return format!("{}: {}", result.tool, err);
+    }
+
+    let header = format!("{} · {}", result.tool, image_ref);
+
+    let Some(summary) = &result.summary else {
+        return format!(
+            "{header}\n  No normalized summary available (custom or unrecognized \
+             scanner output). Run with --report to see the raw output."
+        );
+    };
+
+    let c = &summary.counts;
+    let counts_line = format!(
+        "  CRITICAL {}   HIGH {}   MEDIUM {}   LOW {}   UNKNOWN {}   ({} total)",
+        c.critical, c.high, c.medium, c.low, c.unknown, summary.total
+    );
+
+    if summary.total == 0 {
+        return format!("{header}\n{counts_line}\n  No vulnerabilities found.");
+    }
+
+    let shown: Vec<&Vulnerability> = summary
+        .vulnerabilities
+        .iter()
+        .filter(|v| matches!(v.severity, Severity::Critical | Severity::High))
+        .collect();
+
+    let mut out = format!("{header}\n{counts_line}\n");
+
+    if !shown.is_empty() {
+        let id_w = shown
+            .iter()
+            .map(|v| v.id.len())
+            .chain(std::iter::once("CVE".len()))
+            .max()
+            .unwrap();
+        let pkg_w = shown
+            .iter()
+            .map(|v| v.package.len())
+            .chain(std::iter::once("PACKAGE".len()))
+            .max()
+            .unwrap();
+        let inst_w = shown
+            .iter()
+            .map(|v| v.installed_version.len())
+            .chain(std::iter::once("INSTALLED".len()))
+            .max()
+            .unwrap();
+
+        out.push('\n');
+        out.push_str(&format!(
+            "  {:<8}  {:<id_w$}  {:<pkg_w$}  {:<inst_w$}  {}\n",
+            "SEVERITY", "CVE", "PACKAGE", "INSTALLED", "FIXED"
+        ));
+        for v in &shown {
+            let fixed = v.fixed_version.as_deref().unwrap_or("—");
+            out.push_str(&format!(
+                "  {:<8}  {:<id_w$}  {:<pkg_w$}  {:<inst_w$}  {}\n",
+                v.severity.label(),
+                v.id,
+                v.package,
+                v.installed_version,
+                fixed
+            ));
+        }
+    }
+
+    let lower = c.medium + c.low + c.unknown;
+    if lower > 0 {
+        out.push_str(&format!(
+            "  … {lower} more ({} medium, {} low, {} unknown) — run with --report for full JSON\n",
+            c.medium, c.low, c.unknown
+        ));
+    }
+
+    out.trim_end().to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scan::ScanTool;
+
+    fn result_with(summary: Option<ScanSummary>, error: Option<String>) -> ScanResult {
+        ScanResult {
+            tool: "trivy".to_string(),
+            command: "trivy rootfs --format json /tmp/x".to_string(),
+            exit_code: Some(0),
+            summary,
+            output: Some(serde_json::json!({"raw": true})),
+            error,
+        }
+    }
+
+    #[test]
+    fn render_shows_critical_high_rows_and_footer() {
+        let summary = ScanSummary::from_vulns(vec![
+            Vulnerability {
+                id: "CVE-2025-1234".into(),
+                package: "openssl".into(),
+                installed_version: "3.0.11".into(),
+                fixed_version: Some("3.0.14".into()),
+                severity: Severity::Critical,
+            },
+            Vulnerability {
+                id: "CVE-2025-9999".into(),
+                package: "zlib".into(),
+                installed_version: "1.2".into(),
+                fixed_version: None,
+                severity: Severity::Medium,
+            },
+        ]);
+        let out = render_summary("nginx:latest", &result_with(Some(summary), None));
+        assert!(out.contains("trivy · nginx:latest"));
+        assert!(out.contains("CRITICAL 1"));
+        assert!(out.contains("CVE-2025-1234"));
+        assert!(out.contains("openssl"));
+        // Medium is not in the table but is summarized in the footer.
+        assert!(!out.contains("CVE-2025-9999"));
+        assert!(out.contains("1 more"));
+        assert!(out.contains("--report"));
+    }
+
+    #[test]
+    fn render_missing_fix_shows_dash() {
+        let summary = ScanSummary::from_vulns(vec![Vulnerability {
+            id: "CVE-1".into(),
+            package: "p".into(),
+            installed_version: "1".into(),
+            fixed_version: None,
+            severity: Severity::High,
+        }]);
+        let out = render_summary("img", &result_with(Some(summary), None));
+        assert!(out.contains("—"));
+    }
+
+    #[test]
+    fn render_zero_vulns() {
+        let summary = ScanSummary::from_vulns(vec![]);
+        let out = render_summary("img", &result_with(Some(summary), None));
+        assert!(out.contains("No vulnerabilities found."));
+    }
+
+    #[test]
+    fn render_no_summary_fallback_notice() {
+        let out = render_summary("img", &result_with(None, None));
+        assert!(out.contains("No normalized summary available"));
+    }
+
+    #[test]
+    fn render_error_line() {
+        let out = render_summary("img", &result_with(None, Some("command not found".into())));
+        assert_eq!(out, "trivy: command not found");
+    }
 
     #[test]
     fn summarize_trivy_maps_fields_and_counts() {

@@ -8,6 +8,7 @@ use tempfile::tempdir;
 
 use crate::extract;
 use crate::image::LayerInfo;
+use crate::scan_summary::ScanSummary;
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScanTool {
@@ -31,6 +32,7 @@ pub struct ScanResult {
     pub tool: String,
     pub command: String,
     pub exit_code: Option<i32>,
+    pub summary: Option<ScanSummary>,
     pub output: Option<serde_json::Value>,
     pub error: Option<String>,
 }
@@ -68,6 +70,7 @@ pub fn run_resolved_command(tool: ScanTool, custom_cmd: Option<&str>, path: &Pat
                     tool: tool_name,
                     command,
                     exit_code,
+                    summary: None,
                     output: None,
                     error: Some(if stderr.is_empty() {
                         "command not found".to_string()
@@ -83,6 +86,7 @@ pub fn run_resolved_command(tool: ScanTool, custom_cmd: Option<&str>, path: &Pat
                 tool: tool_name,
                 command,
                 exit_code,
+                summary: None,
                 output: Some(output),
                 error: None,
             }
@@ -91,6 +95,7 @@ pub fn run_resolved_command(tool: ScanTool, custom_cmd: Option<&str>, path: &Pat
             tool: tool_name,
             command,
             exit_code: None,
+            summary: None,
             output: None,
             error: Some(format!("failed to spawn command: {e}")),
         },
@@ -111,6 +116,7 @@ pub fn run_scan(tool: ScanTool, custom_cmd: Option<&str>, layers: &[LayerInfo]) 
                 tool: tool_name,
                 command: String::new(),
                 exit_code: None,
+                summary: None,
                 output: None,
                 error: Some(format!("failed to create tempdir: {e}")),
             };
@@ -123,6 +129,7 @@ pub fn run_scan(tool: ScanTool, custom_cmd: Option<&str>, layers: &[LayerInfo]) 
             tool: tool_name,
             command: String::new(),
             exit_code: None,
+            summary: None,
             output: None,
             error: Some(format!("failed to extract image for scanning: {e}")),
         };
