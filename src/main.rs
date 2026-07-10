@@ -1,5 +1,6 @@
 mod action;
 mod command_format;
+mod dockerfile;
 mod extract;
 mod image;
 mod report;
