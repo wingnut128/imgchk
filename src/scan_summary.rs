@@ -134,8 +134,45 @@ fn parse_trivy(raw: &serde_json::Value) -> Option<ScanSummary> {
     Some(ScanSummary::from_vulns(vulns))
 }
 
-fn parse_grype(_raw: &serde_json::Value) -> Option<ScanSummary> {
-    None
+fn parse_grype(raw: &serde_json::Value) -> Option<ScanSummary> {
+    let matches = raw.get("matches")?.as_array()?;
+    let mut vulns = Vec::new();
+    for entry in matches {
+        let Some(vuln) = entry.get("vulnerability") else {
+            continue;
+        };
+        let Some(artifact) = entry.get("artifact") else {
+            continue;
+        };
+        let (Some(id), Some(package), Some(installed)) = (
+            vuln.get("id").and_then(|v| v.as_str()),
+            artifact.get("name").and_then(|v| v.as_str()),
+            artifact.get("version").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        let fixed_version = vuln
+            .get("fix")
+            .and_then(|f| f.get("versions"))
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let severity = vuln
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .map(Severity::from_label)
+            .unwrap_or(Severity::Unknown);
+        vulns.push(Vulnerability {
+            id: id.to_string(),
+            package: package.to_string(),
+            installed_version: installed.to_string(),
+            fixed_version,
+            severity,
+        });
+    }
+    Some(ScanSummary::from_vulns(vulns))
 }
 
 #[cfg(test)]
@@ -275,5 +312,45 @@ mod tests {
         assert_eq!(summary.vulnerabilities[0].id, "CVE-1");
         assert_eq!(summary.vulnerabilities[1].id, "CVE-3");
         assert_eq!(summary.vulnerabilities[2].id, "CVE-2");
+    }
+
+    #[test]
+    fn summarize_grype_maps_fields_and_fix_versions() {
+        let raw = serde_json::json!({
+            "matches": [
+                {
+                    "vulnerability": {
+                        "id": "CVE-2025-1234",
+                        "severity": "Critical",
+                        "fix": { "versions": ["3.0.14"], "state": "fixed" }
+                    },
+                    "artifact": { "name": "openssl", "version": "3.0.11" }
+                },
+                {
+                    "vulnerability": {
+                        "id": "CVE-2025-5678",
+                        "severity": "High",
+                        "fix": { "versions": [], "state": "not-fixed" }
+                    },
+                    "artifact": { "name": "libcurl", "version": "8.4.0" }
+                }
+            ]
+        });
+        let summary = summarize(ScanTool::Grype, &raw).expect("grype should parse");
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.counts.critical, 1);
+        let crit = &summary.vulnerabilities[0];
+        assert_eq!(crit.id, "CVE-2025-1234");
+        assert_eq!(crit.package, "openssl");
+        assert_eq!(crit.installed_version, "3.0.11");
+        assert_eq!(crit.fixed_version.as_deref(), Some("3.0.14"));
+        // Empty fix versions -> None.
+        assert_eq!(summary.vulnerabilities[1].fixed_version, None);
+    }
+
+    #[test]
+    fn summarize_grype_unrecognized_structure_returns_none() {
+        let raw = serde_json::json!({ "Results": [] });
+        assert_eq!(summarize(ScanTool::Grype, &raw), None);
     }
 }
