@@ -99,7 +99,15 @@ pub fn summarize(tool: ScanTool, raw: &serde_json::Value) -> Option<ScanSummary>
 }
 
 fn parse_trivy(raw: &serde_json::Value) -> Option<ScanSummary> {
-    let results = raw.get("Results")?.as_array()?;
+    // The `Results` key must be present to recognize this as Trivy output.
+    let results_val = raw.get("Results")?;
+    // Trivy emits `"Results": null` when it ran but found nothing to scan
+    // (e.g. no OS/package DB) — a successful empty scan, not a parse failure.
+    if results_val.is_null() {
+        return Some(ScanSummary::from_vulns(Vec::new()));
+    }
+    // Present but not an array → genuinely unrecognized structure.
+    let results = results_val.as_array()?;
     let mut vulns = Vec::new();
     for result in results {
         let Some(entries) = result.get("Vulnerabilities").and_then(|v| v.as_array()) else {
@@ -438,6 +446,18 @@ mod tests {
     fn summarize_trivy_unrecognized_structure_returns_none() {
         let raw = serde_json::json!({ "nope": true });
         assert_eq!(summarize(ScanTool::Trivy, &raw), None);
+    }
+
+    #[test]
+    fn summarize_trivy_null_results_is_empty_scan_not_failure() {
+        // Trivy emits "Results": null when it ran but found nothing to scan
+        // (e.g. no OS/package DB on a bare rootfs) — a successful empty scan,
+        // not a parse failure. Must return Some(empty), not None.
+        let raw = serde_json::json!({ "Results": null });
+        let summary = summarize(ScanTool::Trivy, &raw)
+            .expect("null Results is a successful empty scan, not a failure");
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.counts.critical, 0);
     }
 
     #[test]
