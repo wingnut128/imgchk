@@ -36,8 +36,6 @@ pub struct ImageInfo {
     pub architecture: String,
     pub os: String,
     pub source: String,
-    // Consumed by Dockerfile reconstruction (upcoming task); not yet read.
-    #[allow(dead_code)]
     pub history: Vec<HistoryStep>,
 }
 

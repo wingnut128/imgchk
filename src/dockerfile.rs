@@ -30,7 +30,6 @@ const INSTRUCTIONS: &[&str] = &[
 ];
 
 /// Render the full history as an approximate, annotated Dockerfile.
-#[allow(dead_code)]
 pub fn reconstruct(history: &[HistoryStep]) -> String {
     let mut lines: Vec<String> = Vec::new();
     for step in history {
