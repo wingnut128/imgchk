@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.12](https://github.com/wingnut128/imgchk/compare/v0.4.11...v0.4.12) - 2026-07-22
+
+### Other
+
+- *(deps)* bump actions/checkout from 7.0.0 to 7.0.1 ([#102](https://github.com/wingnut128/imgchk/pull/102))
+- *(deps)* bump the cargo-minor-and-patch group with 5 updates ([#105](https://github.com/wingnut128/imgchk/pull/105))
+- *(deps)* bump taiki-e/install-action from 2.83.2 to 2.84.0 ([#103](https://github.com/wingnut128/imgchk/pull/103))
+- *(deps)* bump github/codeql-action/init from 4.36.3 to 4.37.2 ([#104](https://github.com/wingnut128/imgchk/pull/104))
+- *(deps)* bump github/codeql-action/analyze from 4.36.3 to 4.37.2 ([#101](https://github.com/wingnut128/imgchk/pull/101))
+
 ## [0.4.11](https://github.com/wingnut128/imgchk/compare/v0.4.10...v0.4.11) - 2026-07-15
 
 ### Fixed
