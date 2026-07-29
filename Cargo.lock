@@ -1728,9 +1728,9 @@ dependencies = [
 
 [[package]]
 name = "ocirender"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a10b5fed4e93b771ba8fa803db88e3cb9ae632ce2f79494751cce962b18757c"
+checksum = "f36317c2f59ac6698503ab67c1202b69715c02b82a13834e233285a3b58b5308"
 dependencies = [
  "anyhow",
  "bzip2",
