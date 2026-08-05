@@ -38,6 +38,40 @@ impl ImageSource for RegistrySource {
     }
 }
 
+/// Parse a `"os/arch"` platform string (e.g. `"linux/arm64"`) into its two
+/// halves, defaulting each independently: `None` (no `--platform` flag) or a
+/// bare os with no `/arch` suffix both fall back to `amd64`.
+fn parse_platform(platform: Option<&str>) -> (String, String) {
+    let Some(p) = platform else {
+        return ("linux".to_string(), "amd64".to_string());
+    };
+    let parts: Vec<&str> = p.split('/').collect();
+    (
+        parts.first().copied().unwrap_or("linux").to_string(),
+        parts.get(1).copied().unwrap_or("amd64").to_string(),
+    )
+}
+
+/// Pick the manifest-list entry matching `(os, arch)`, returning its digest.
+/// This is the matching logic behind the `platform_resolver` callback
+/// `oci_client` invokes when pulling a multi-arch image index; entries with
+/// no `platform` field never match.
+fn resolve_platform_digest(
+    entries: &[oci_client::manifest::ImageIndexEntry],
+    os: &str,
+    arch: &str,
+) -> Option<String> {
+    entries
+        .iter()
+        .find(|entry| {
+            entry
+                .platform
+                .as_ref()
+                .is_some_and(|p| p.os.to_string() == os && p.architecture.to_string() == arch)
+        })
+        .map(|entry| entry.digest.clone())
+}
+
 async fn load(
     reference: &str,
     platform: Option<&str>,
@@ -50,27 +84,12 @@ async fn load(
 
     let image_ref: Reference = reference.parse().context("invalid image reference")?;
 
-    let (target_os, target_arch) = if let Some(p) = platform {
-        let parts: Vec<&str> = p.split('/').collect();
-        (
-            parts.first().copied().unwrap_or("linux").to_string(),
-            parts.get(1).copied().unwrap_or("amd64").to_string(),
-        )
-    } else {
-        ("linux".to_string(), "amd64".to_string())
-    };
+    let (target_os, target_arch) = parse_platform(platform);
 
     let resolver_os = target_os.clone();
     let resolver_arch = target_arch.clone();
     let platform_resolver = move |entries: &[ImageIndexEntry]| -> Option<String> {
-        entries
-            .iter()
-            .find(|entry| {
-                entry.platform.as_ref().is_some_and(|p| {
-                    p.os.to_string() == resolver_os && p.architecture.to_string() == resolver_arch
-                })
-            })
-            .map(|entry| entry.digest.clone())
+        resolve_platform_digest(entries, &resolver_os, &resolver_arch)
     };
 
     let config = ClientConfig {
@@ -245,4 +264,90 @@ async fn load(
         source: reference.to_string(),
         history,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oci_client::manifest::{ImageIndexEntry, Platform};
+    use oci_spec::image::{Arch, Os};
+
+    fn entry(os: Os, arch: Arch, digest: &str) -> ImageIndexEntry {
+        ImageIndexEntry {
+            media_type: "application/vnd.oci.image.manifest.v1+json".to_string(),
+            digest: digest.to_string(),
+            size: 0,
+            platform: Some(Platform {
+                architecture: arch,
+                os,
+                os_version: None,
+                os_features: None,
+                variant: None,
+                features: None,
+            }),
+            annotations: None,
+            artifact_type: None,
+        }
+    }
+
+    #[test]
+    fn parse_platform_defaults_to_linux_amd64_when_absent() {
+        assert_eq!(
+            parse_platform(None),
+            ("linux".to_string(), "amd64".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_platform_splits_os_and_arch() {
+        assert_eq!(
+            parse_platform(Some("linux/arm64")),
+            ("linux".to_string(), "arm64".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_platform_defaults_arch_when_slash_missing() {
+        assert_eq!(
+            parse_platform(Some("windows")),
+            ("windows".to_string(), "amd64".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_platform_digest_finds_matching_entry() {
+        let entries = vec![
+            entry(Os::Linux, Arch::Amd64, "sha256:amd64digest"),
+            entry(Os::Linux, Arch::ARM64, "sha256:arm64digest"),
+        ];
+        assert_eq!(
+            resolve_platform_digest(&entries, "linux", "arm64"),
+            Some("sha256:arm64digest".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_platform_digest_returns_none_when_no_match() {
+        let entries = vec![entry(Os::Linux, Arch::Amd64, "sha256:amd64digest")];
+        assert_eq!(resolve_platform_digest(&entries, "linux", "arm64"), None);
+    }
+
+    #[test]
+    fn resolve_platform_digest_skips_entries_with_no_platform() {
+        let mut e = entry(Os::Linux, Arch::Amd64, "sha256:x");
+        e.platform = None;
+        assert_eq!(resolve_platform_digest(&[e], "linux", "amd64"), None);
+    }
+
+    #[test]
+    fn resolve_platform_digest_returns_first_match_on_duplicates() {
+        let entries = vec![
+            entry(Os::Linux, Arch::Amd64, "sha256:first"),
+            entry(Os::Linux, Arch::Amd64, "sha256:second"),
+        ];
+        assert_eq!(
+            resolve_platform_digest(&entries, "linux", "amd64"),
+            Some("sha256:first".to_string())
+        );
+    }
 }
