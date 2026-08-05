@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.13](https://github.com/wingnut128/imgchk/compare/v0.4.12...v0.4.13) - 2026-08-05
+
+### Other
+
+- Add unit tests for image/registry.rs and extract/mod.rs ([#120](https://github.com/wingnut128/imgchk/pull/120))
+- *(deps)* bump github/codeql-action/init from 4.37.3 to 4.37.4 ([#116](https://github.com/wingnut128/imgchk/pull/116))
+- Add integration-test scaffold under tests/ ([#118](https://github.com/wingnut128/imgchk/pull/118))
+- *(deps)* bump github/codeql-action/analyze from 4.37.3 to 4.37.4 ([#115](https://github.com/wingnut128/imgchk/pull/115))
+- *(deps)* bump clap in the cargo-minor-and-patch group ([#113](https://github.com/wingnut128/imgchk/pull/113))
+- *(deps)* bump taiki-e/install-action from 2.85.3 to 2.85.7 ([#114](https://github.com/wingnut128/imgchk/pull/114))
+
 ## [0.4.12](https://github.com/wingnut128/imgchk/compare/v0.4.11...v0.4.12) - 2026-07-29
 
 ### Other
