@@ -251,9 +251,6 @@ async fn load(
         });
     }
 
-    // Leak the tmpdir so blobs persist for the TUI session.
-    let _ = tmp_dir.keep();
-
     Ok(ImageInfo {
         layers,
         total_size,
@@ -263,6 +260,9 @@ async fn load(
         os: image_config.os.unwrap_or_else(|| "unknown".into()),
         source: reference.to_string(),
         history,
+        // Hand the staging dir to the ImageInfo so the blobs live as long as the
+        // layers that point at them, and are removed when it drops.
+        blob_dir: Some(tmp_dir),
     })
 }
 
