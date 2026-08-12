@@ -127,83 +127,103 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
             }
         }
 
-        Action::ExtractCurrentLayer => {
-            let dir = app.ensure_output_dir();
-            let fmt = app.output.format;
-            let layer = &app.image.layers[app.nav.layer_index];
-            let result = match fmt {
-                OutputFormat::TarGz => extract::export_layer(layer, &dir)
-                    .map(|path| format!("Exported layer {} to {}", layer.index, path.display())),
-                _ => {
-                    let name = format!("layer-{}", layer.index);
-                    let spec = extract::make_image_spec(fmt, &dir, &name);
-                    extract::export_ocirender_single(layer, spec).map(|path| {
-                        format!(
-                            "Exported layer {} as {} to {}",
-                            layer.index,
-                            fmt.label(),
-                            path.display()
-                        )
-                    })
-                }
-            };
-            app.output.status = match result {
-                Ok(msg) => msg,
-                Err(e) => format!("Export error: {e}"),
-            };
-        }
+        Action::ExtractCurrentLayer => match app.ensure_output_dir() {
+            Ok(dir) => {
+                let fmt = app.output.format;
+                let layer = &app.image.layers[app.nav.layer_index];
+                let result = match fmt {
+                    OutputFormat::TarGz => extract::export_layer(layer, &dir).map(|path| {
+                        format!("Exported layer {} to {}", layer.index, path.display())
+                    }),
+                    _ => {
+                        let name = format!("layer-{}", layer.index);
+                        let spec = extract::make_image_spec(fmt, &dir, &name);
+                        extract::export_ocirender_single(layer, spec).map(|path| {
+                            format!(
+                                "Exported layer {} as {} to {}",
+                                layer.index,
+                                fmt.label(),
+                                path.display()
+                            )
+                        })
+                    }
+                };
+                app.output.status = match result {
+                    Ok(msg) => msg,
+                    Err(e) => format!("Export error: {e}"),
+                };
+            }
+            Err(e) => {
+                app.output.status = e;
+            }
+        },
 
-        Action::ExtractAllLayers => {
-            let dir = app.ensure_output_dir();
-            let fmt = app.output.format;
-            let result = match fmt {
-                OutputFormat::TarGz => extract::export_all_layers(&app.image.layers, &dir)
-                    .map(|paths| format!("Exported {} layers to {}", paths.len(), dir.display())),
-                _ => {
-                    let spec = extract::make_image_spec(fmt, &dir, "image");
-                    extract::export_ocirender(&app.image.layers, spec).map(|path| {
-                        format!(
-                            "Exported all layers as {} to {}",
-                            fmt.label(),
-                            path.display()
-                        )
-                    })
-                }
-            };
-            app.output.status = match result {
-                Ok(msg) => msg,
-                Err(e) => format!("Export error: {e}"),
-            };
-        }
+        Action::ExtractAllLayers => match app.ensure_output_dir() {
+            Ok(dir) => {
+                let fmt = app.output.format;
+                let result = match fmt {
+                    OutputFormat::TarGz => {
+                        extract::export_all_layers(&app.image.layers, &dir).map(|paths| {
+                            format!("Exported {} layers to {}", paths.len(), dir.display())
+                        })
+                    }
+                    _ => {
+                        let spec = extract::make_image_spec(fmt, &dir, "image");
+                        extract::export_ocirender(&app.image.layers, spec).map(|path| {
+                            format!(
+                                "Exported all layers as {} to {}",
+                                fmt.label(),
+                                path.display()
+                            )
+                        })
+                    }
+                };
+                app.output.status = match result {
+                    Ok(msg) => msg,
+                    Err(e) => format!("Export error: {e}"),
+                };
+            }
+            Err(e) => {
+                app.output.status = e;
+            }
+        },
 
         Action::ExtractFiles => {
-            let dir = app.ensure_output_dir();
-            let paths: Vec<String> = if app.selection.is_empty() {
-                app.nav.cached_tree.all_paths()
-            } else {
-                app.selection.paths().iter().cloned().collect()
-            };
-            let label = if app.selection.is_empty() {
-                "all"
-            } else {
-                "selected"
-            };
-            let layer = &app.image.layers[app.nav.layer_index];
-            let base_name = format!("layer-{}-files", layer.index);
-            match extract::extract_files(layer, &paths, &dir, app.output.format, &base_name) {
-                Ok((count, outputs)) => {
-                    let dest = match outputs.as_slice() {
-                        [single] => single.display().to_string(),
-                        _ => dir.display().to_string(),
+            match app.ensure_output_dir() {
+                Ok(dir) => {
+                    let paths: Vec<String> = if app.selection.is_empty() {
+                        app.nav.cached_tree.all_paths()
+                    } else {
+                        app.selection.paths().iter().cloned().collect()
                     };
-                    app.output.status = format!("Extracted {count} {label} files to {dest}");
-                    // TODO: revisit whether selection should survive extraction
-                    // so users can re-extract with a different format. Today's
-                    // behavior matches the pre-refactor code.
-                    app.selection.clear();
+                    let label = if app.selection.is_empty() {
+                        "all"
+                    } else {
+                        "selected"
+                    };
+                    let layer = &app.image.layers[app.nav.layer_index];
+                    let base_name = format!("layer-{}-files", layer.index);
+                    match extract::extract_files(layer, &paths, &dir, app.output.format, &base_name)
+                    {
+                        Ok((count, outputs)) => {
+                            let dest = match outputs.as_slice() {
+                                [single] => single.display().to_string(),
+                                _ => dir.display().to_string(),
+                            };
+                            app.output.status =
+                                format!("Extracted {count} {label} files to {dest}");
+                            // TODO: revisit whether selection should survive extraction
+                            // so users can re-extract with a different format. Today's
+                            // behavior matches the pre-refactor code.
+                            app.selection.clear();
+                        }
+                        Err(e) => {
+                            app.output.status = format!("Extract error: {e}");
+                        }
+                    }
                 }
                 Err(e) => {
-                    app.output.status = format!("Extract error: {e}");
+                    app.output.status = e;
                 }
             }
         }
