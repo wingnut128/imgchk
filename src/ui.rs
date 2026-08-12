@@ -292,16 +292,10 @@ pub fn run(
 mod tests {
     use super::*;
 
-    #[test]
-    fn terminal_guard_drop_cleans_up() {
-        // Test that the guard's Drop impl actually runs by tracking
-        // via a flag. We can't easily assert terminal state without a PTY,
-        // but we can verify the guard's cleanup method is invoked.
-        let _guard = TerminalGuard { cleaned_up: false };
-        // On drop, the guard would call restore(). Since we can't verify
-        // terminal state in unit tests without a PTY, we just ensure
-        // the struct compiles and can be dropped without panicking.
-    }
+    // TerminalGuard is deliberately untested: asserting that raw mode and the
+    // alternate screen are restored needs a PTY, and merely constructing a
+    // guard in a unit test would run disable_raw_mode() + LeaveAlternateScreen
+    // against the terminal of whoever runs `cargo test`.
 
     #[test]
     fn output_state_ensure_dir_with_existing_dir_succeeds() {
@@ -315,34 +309,21 @@ mod tests {
     #[test]
     fn output_state_ensure_dir_tmpdir_sets_status() {
         let mut state = OutputState::new(None);
-        let result = state.ensure_dir();
-        assert!(result.is_ok());
+        let dir = state.ensure_dir().expect("tmpdir creation should succeed");
         assert!(state.status.starts_with("Output:"));
-        assert!(state.dir.is_some());
+        assert_eq!(state.dir.as_deref(), Some(dir.as_path()));
+        // ensure_dir deliberately leaks its tmpdir so extractions outlive the
+        // process, so the test has to remove it itself.
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn output_state_ensure_dir_tmpdir_caches_result() {
         let mut state = OutputState::new(None);
-        let result1 = state.ensure_dir();
-        let result2 = state.ensure_dir();
-        assert!(result1.is_ok());
-        assert!(result2.is_ok());
-        // Both calls should return the same directory
-        assert_eq!(result1.unwrap(), result2.unwrap());
-    }
-
-    #[test]
-    fn output_state_ensure_dir_invalid_path_sets_error_status() {
-        // We can't easily force tempfile::tempdir() to fail in a unit test
-        // without mocking, but we can verify that ensure_dir returns a Result
-        // and handles both success and error cases. The error path is tested
-        // indirectly: if tempdir creation fails in production, the status
-        // will be set to an error message instead of panicking.
-        let mut state = OutputState::new(None);
-        let result = state.ensure_dir();
-        // In normal conditions this succeeds, but the Result type ensures
-        // that callers must handle potential failures.
-        assert!(result.is_ok() || result.is_err());
+        let first = state.ensure_dir().expect("first call should succeed");
+        let second = state.ensure_dir().expect("second call should succeed");
+        // The tmpdir is created once and reused, not recreated per call.
+        assert_eq!(first, second);
+        let _ = std::fs::remove_dir_all(&first);
     }
 }
