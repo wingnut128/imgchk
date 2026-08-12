@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.14](https://github.com/wingnut128/imgchk/compare/v0.4.13...v0.4.14) - 2026-08-12
+
+### Fixed
+
+- load docker save archives and clean up staged layer blobs ([#132](https://github.com/wingnut128/imgchk/pull/132))
+
+### Other
+
+- cache merged tree, reuse Tokio runtime; fix terminal cleanup and LRU atime ([#133](https://github.com/wingnut128/imgchk/pull/133))
+- *(deps)* stop Dependabot proposing standalone oci-spec bumps ([#131](https://github.com/wingnut128/imgchk/pull/131))
+- *(release)* attest build provenance and publish a CycloneDX SBOM ([#129](https://github.com/wingnut128/imgchk/pull/129))
+
 ## [0.4.13](https://github.com/wingnut128/imgchk/compare/v0.4.12...v0.4.13) - 2026-08-12
 
 ### Other
