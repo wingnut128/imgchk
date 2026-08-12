@@ -54,6 +54,9 @@ pub struct NavState {
     pub expanded_dirs: HashSet<String>,
     pub cached_tree: FileTree,
     pub file_rows: Vec<TreeRow>,
+    /// Cache key: (layer_index, cumulative) for which cached_tree is valid.
+    /// Avoids re-merging trees when only expanded_dirs or file_index change.
+    cached_merge_key: Option<(usize, bool)>,
 }
 
 impl NavState {
@@ -66,25 +69,35 @@ impl NavState {
             expanded_dirs: HashSet::new(),
             cached_tree: FileTree::new(),
             file_rows: Vec::new(),
+            cached_merge_key: None,
         }
     }
 
     /// Rebuild [`Self::cached_tree`] and [`Self::file_rows`] from the
     /// current `layer_index` / `cumulative` state against the layers in
-    /// `image`. Clamps `file_index` if the new row count is shorter.
+    /// `image`. Only recomputes the merged tree if the key (layer_index,
+    /// cumulative) has changed; always re-flattens file_rows based on
+    /// expanded_dirs. Clamps `file_index` if the new row count is shorter.
     pub fn rebuild_file_rows(&mut self, image: &ImageInfo) {
-        self.cached_tree = if self.cumulative {
-            let trees: Vec<FileTree> = image.layers[..=self.layer_index]
-                .iter()
-                .map(|l| l.file_tree.clone())
-                .collect();
-            tree::merge_trees(&trees)
-        } else if image.layers.is_empty() {
-            FileTree::new()
-        } else {
-            image.layers[self.layer_index].file_tree.clone()
-        };
+        let current_key = (self.layer_index, self.cumulative);
 
+        // Only rebuild cached_tree if the key has changed.
+        if self.cached_merge_key != Some(current_key) {
+            self.cached_tree = if self.cumulative {
+                let trees: Vec<FileTree> = image.layers[..=self.layer_index]
+                    .iter()
+                    .map(|l| l.file_tree.clone())
+                    .collect();
+                tree::merge_trees(&trees)
+            } else if image.layers.is_empty() {
+                FileTree::new()
+            } else {
+                image.layers[self.layer_index].file_tree.clone()
+            };
+            self.cached_merge_key = Some(current_key);
+        }
+
+        // Always re-flatten rows from the (possibly-unchanged) cached_tree.
         let mut rows = Vec::new();
         flatten_node(&self.cached_tree.root, 0, &self.expanded_dirs, &mut rows);
         self.file_rows = rows;

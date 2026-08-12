@@ -504,4 +504,101 @@ mod tests {
         update(&mut app, Action::ToggleSelection);
         assert!(!app.selection.contains("/a"));
     }
+
+    // ── Cache invalidation ────────────────────────────────────────────────
+
+    #[test]
+    fn cache_invalidates_on_navigate_layer() {
+        let mut app = app_with_layers(vec![
+            layer(0, tree_with(&["/layer0_file"])),
+            layer(1, tree_with(&["/layer1_file"])),
+        ]);
+        // Start on layer 0; in layer-only mode, we see layer 0's files
+        assert_eq!(app.nav.file_rows[0].path, "/layer0_file");
+        // Navigate to layer 1; cache should be invalidated, tree rebuilt
+        update(&mut app, Action::NavigateLayer { delta: 1 });
+        assert_eq!(app.nav.layer_index, 1);
+        assert_eq!(app.nav.file_rows[0].path, "/layer1_file");
+    }
+
+    #[test]
+    fn cache_invalidates_on_toggle_cumulative() {
+        let mut app = app_with_layers(vec![
+            layer(0, tree_with(&["/a"])),
+            layer(1, tree_with(&["/b"])),
+        ]);
+        // Start on layer 1, non-cumulative: only /b is visible
+        update(&mut app, Action::NavigateLayer { delta: 1 });
+        let non_cumulative_rows: Vec<String> =
+            app.nav.file_rows.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(non_cumulative_rows.len(), 1);
+        assert_eq!(non_cumulative_rows[0], "/b");
+
+        // Toggle to cumulative: both /a and /b should be visible
+        update(&mut app, Action::ToggleCumulative);
+        let cumulative_rows: Vec<String> =
+            app.nav.file_rows.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(cumulative_rows.len(), 2);
+        assert!(cumulative_rows.iter().any(|r| r == "/a"));
+        assert!(cumulative_rows.iter().any(|r| r == "/b"));
+
+        // Toggle back to non-cumulative: only /b again
+        update(&mut app, Action::ToggleCumulative);
+        let non_cumulative_again: Vec<String> =
+            app.nav.file_rows.iter().map(|r| r.path.clone()).collect();
+        assert_eq!(non_cumulative_rows, non_cumulative_again);
+    }
+
+    #[test]
+    fn cache_skips_tree_rebuild_on_toggle_expand() {
+        let mut app = app_with_layers(vec![layer(0, tree_with(&["/d/x", "/d/y", "/d/z"]))]);
+        // File rows should have /d collapsed initially
+        assert_eq!(app.nav.file_rows.len(), 1);
+        assert_eq!(app.nav.file_rows[0].path, "/d");
+        assert!(!app.nav.file_rows[0].expanded);
+
+        // Expand /d: tree stays the same, rows re-flatten to show children
+        let dir_path = app.nav.file_rows[0].path.clone();
+        update(&mut app, Action::ToggleExpand);
+        assert!(app.nav.expanded_dirs.contains(&dir_path));
+        // After expansion, we should see /d plus its children
+        assert_eq!(app.nav.file_rows.len(), 4); // /d, /d/x, /d/y, /d/z
+        assert_eq!(app.nav.file_rows[0].path, "/d");
+        assert!(app.nav.file_rows[0].expanded);
+
+        // Collapse /d again: tree still unchanged, rows re-flatten
+        update(&mut app, Action::ToggleExpand);
+        assert!(!app.nav.expanded_dirs.contains(&dir_path));
+        // Back to just /d (collapsed)
+        assert_eq!(app.nav.file_rows.len(), 1);
+        assert_eq!(app.nav.file_rows[0].path, "/d");
+        assert!(!app.nav.file_rows[0].expanded);
+    }
+
+    #[test]
+    fn cache_handles_layer_navigation_then_expand() {
+        // This test verifies that toggling expand after navigating layers
+        // produces correct rows (both cache invalidation scenarios combined).
+        let mut app = app_with_layers(vec![
+            layer(0, tree_with(&["/a/b", "/a/c"])),
+            layer(1, tree_with(&["/d/e", "/d/f"])),
+        ]);
+        // Start on layer 0
+        assert!(app.nav.file_rows[0].path.starts_with("/a"));
+
+        // Navigate to layer 1
+        update(&mut app, Action::NavigateLayer { delta: 1 });
+        let dir_path = app.nav.file_rows[0].path.clone();
+        assert!(dir_path.starts_with("/d"));
+
+        // Expand /d
+        update(&mut app, Action::ToggleExpand);
+        assert!(app.nav.file_rows.len() > 1);
+        assert_eq!(app.nav.file_rows[0].path, "/d");
+
+        // Collapse /d
+        update(&mut app, Action::ToggleExpand);
+        assert_eq!(app.nav.file_rows.len(), 1);
+        assert_eq!(app.nav.file_rows[0].path, "/d");
+    }
 }
