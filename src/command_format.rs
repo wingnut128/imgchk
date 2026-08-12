@@ -67,10 +67,13 @@ pub fn strip_control(s: &str) -> String {
 }
 
 /// Clean a command and truncate to `max_len` characters with an ellipsis.
+/// Character count is based on Unicode scalar values (.chars()), not display width.
 pub fn truncate_command(cmd: &str, max_len: usize) -> String {
     let cleaned = clean_command(cmd);
-    if cleaned.len() > max_len {
-        format!("{}…", &cleaned[..max_len.saturating_sub(1)])
+    let char_count = cleaned.chars().count();
+    if char_count > max_len {
+        let truncated: String = cleaned.chars().take(max_len.saturating_sub(1)).collect();
+        format!("{}…", truncated)
     } else {
         cleaned
     }
@@ -199,5 +202,70 @@ mod tests {
     fn truncate_cleans_before_measuring() {
         // After cleaning, "echo hi" is 7 chars — well under 20.
         assert_eq!(truncate_command("/bin/sh -c echo hi", 20), "echo hi");
+    }
+
+    #[test]
+    fn truncate_handles_emoji_at_boundary() {
+        // Emoji "🎉" is a single Unicode scalar value (one char)
+        // but multiple bytes in UTF-8 (4 bytes: F0 9F 8E 89).
+        // With max_len=5, we should take 4 chars + ellipsis, not panic.
+        let input = "/bin/sh -c echo 🎉test";
+        let result = truncate_command(input, 5);
+        // After cleaning: "echo 🎉test" (10 chars)
+        assert!(result.ends_with('…'));
+        assert!(result.chars().count() <= 5);
+        // Should not contain unfinished UTF-8 sequences
+        assert!(result.is_char_boundary(result.len()));
+    }
+
+    #[test]
+    fn truncate_handles_accented_chars_at_boundary() {
+        // Accented char "é" is a single char but multiple bytes (C3 A9 in UTF-8).
+        let input = "café";
+        let result = truncate_command(input, 3);
+        // "café" has 4 chars, max is 3, so truncate to 2 + ellipsis.
+        assert_eq!(result, "ca…");
+        assert_eq!(result.chars().count(), 3);
+    }
+
+    #[test]
+    fn truncate_string_exactly_max_len() {
+        // If string is exactly max_len chars, don't truncate.
+        assert_eq!(truncate_command("hello", 5), "hello");
+        assert_eq!(truncate_command("hello", 6), "hello");
+    }
+
+    #[test]
+    fn truncate_with_max_len_of_1() {
+        // When max_len is 1, we can only fit the ellipsis.
+        let result = truncate_command("hello", 1);
+        assert_eq!(result, "…");
+        assert_eq!(result.chars().count(), 1);
+    }
+
+    #[test]
+    fn truncate_with_max_len_of_2() {
+        // With max_len=2, take 1 char + ellipsis.
+        let result = truncate_command("hello", 2);
+        assert_eq!(result, "h…");
+        assert_eq!(result.chars().count(), 2);
+    }
+
+    #[test]
+    fn truncate_ascii_regression() {
+        // Ensure pure-ASCII input still works as before.
+        let result = truncate_command("abcdefghij", 5);
+        assert_eq!(result, "abcd…");
+        assert_eq!(result.chars().count(), 5);
+    }
+
+    #[test]
+    fn truncate_mixed_multibyte_and_ascii() {
+        // String with mixed emoji and ASCII: "🎉ab🎉cdef" (8 chars total)
+        let input = "🎉ab🎉cdef";
+        let result = truncate_command(input, 6);
+        // Truncate to 5 chars + ellipsis
+        assert_eq!(result, "🎉ab🎉c…");
+        assert_eq!(result.chars().count(), 6);
     }
 }
