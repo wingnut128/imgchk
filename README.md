@@ -62,6 +62,27 @@ just hooks          # install pre-commit hook (fmt + clippy)
 
 Run `just` (or `just --list`) to see all available recipes.
 
+## Verifying releases
+
+Releases are accompanied by cryptographic attestations. You can verify that a binary was built by this repository's CI using:
+
+```bash
+gh attestation verify imgchk-0.4.14-x86_64-unknown-linux-gnu --repo wingnut128/imgchk
+```
+
+This verifies the **build provenance** (SLSA v1 attestation, keyless-signed via GitHub OIDC at the release tag). Replace the version and platform as needed. The command exits 0 on success.
+
+A **CycloneDX SBOM** (`imgchk-*.cyclonedx.json`) is also published with each release. Its attestation is bound to the `x86_64-unknown-linux-gnu` binary only:
+
+```bash
+gh attestation verify imgchk-0.4.14-x86_64-unknown-linux-gnu --repo wingnut128/imgchk \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+Note: The SBOM attestation verification only succeeds against that specific binary — verifying it against the arm64 or other platform binaries will fail by design.
+
+Both commands require the [GitHub CLI](https://cli.github.com) and a network connection. See [Using artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds) for background.
+
 ## Usage
 
 ```bash
