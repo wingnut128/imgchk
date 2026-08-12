@@ -185,7 +185,12 @@ fn main() -> anyhow::Result<()> {
     }
 
     if let Some(tool) = cli.scan {
-        let mut result = scan::run_scan(tool, cli.scan_cmd.as_deref(), &image.layers);
+        let mut result = scan::run_scan(
+            tool,
+            cli.scan_cmd.as_deref(),
+            &image.layers,
+            rt.handle().clone(),
+        );
         if let Some(output) = &result.output {
             result.summary = scan_summary::summarize(tool, output);
         }
@@ -205,7 +210,7 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    ui::run(image, cli.output)
+    ui::run(image, cli.output, rt.handle().clone())
 }
 
 #[cfg(test)]

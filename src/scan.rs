@@ -106,7 +106,12 @@ pub fn run_resolved_command(tool: ScanTool, custom_cmd: Option<&str>, path: &Pat
 /// ephemeral tempdir — independent of `-o`/`cli.output`, always cleaned up
 /// after the scan regardless of outcome — then run `tool`'s scan command
 /// against it.
-pub fn run_scan(tool: ScanTool, custom_cmd: Option<&str>, layers: &[LayerInfo]) -> ScanResult {
+pub fn run_scan(
+    tool: ScanTool,
+    custom_cmd: Option<&str>,
+    layers: &[LayerInfo],
+    rt_handle: tokio::runtime::Handle,
+) -> ScanResult {
     let tool_name = tool.name().to_string();
 
     let dir = match tempdir() {
@@ -124,7 +129,8 @@ pub fn run_scan(tool: ScanTool, custom_cmd: Option<&str>, layers: &[LayerInfo]) 
     };
 
     let dir_path: PathBuf = dir.path().to_path_buf();
-    if let Err(e) = extract::export_ocirender(layers, ImageSpec::Dir { path: dir_path }) {
+    if let Err(e) = extract::export_ocirender(layers, ImageSpec::Dir { path: dir_path }, rt_handle)
+    {
         return ScanResult {
             tool: tool_name,
             command: String::new(),
@@ -161,7 +167,8 @@ mod tests {
     #[test]
     fn run_scan_reports_error_when_layer_blob_is_missing() {
         let layers = vec![bogus_layer()];
-        let result = run_scan(ScanTool::Trivy, None, &layers);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = run_scan(ScanTool::Trivy, None, &layers, rt.handle().clone());
 
         assert_eq!(result.output, None);
         assert_eq!(result.exit_code, None);

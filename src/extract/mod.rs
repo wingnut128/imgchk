@@ -65,7 +65,11 @@ pub fn make_image_spec(format: OutputFormat, output_dir: &Path, name: &str) -> I
 }
 
 /// Export all layers merged into a single output via ocirender's StreamingPacker.
-pub fn export_ocirender(layers: &[LayerInfo], spec: ImageSpec) -> anyhow::Result<PathBuf> {
+pub fn export_ocirender(
+    layers: &[LayerInfo],
+    spec: ImageSpec,
+    rt_handle: tokio::runtime::Handle,
+) -> anyhow::Result<PathBuf> {
     let metas: Vec<LayerMeta> = layers
         .iter()
         .enumerate()
@@ -77,8 +81,7 @@ pub fn export_ocirender(layers: &[LayerInfo], spec: ImageSpec) -> anyhow::Result
 
     let output_path = spec.path().to_path_buf();
 
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
+    rt_handle.block_on(async {
         let packer = StreamingPacker::new(metas, spec, None);
         for (i, layer) in layers.iter().enumerate() {
             packer
@@ -92,15 +95,18 @@ pub fn export_ocirender(layers: &[LayerInfo], spec: ImageSpec) -> anyhow::Result
 }
 
 /// Export a single layer via ocirender (re-indexes to 0).
-pub fn export_ocirender_single(layer: &LayerInfo, spec: ImageSpec) -> anyhow::Result<PathBuf> {
+pub fn export_ocirender_single(
+    layer: &LayerInfo,
+    spec: ImageSpec,
+    rt_handle: tokio::runtime::Handle,
+) -> anyhow::Result<PathBuf> {
     let meta = LayerMeta {
         index: 0,
         media_type: layer.media_type.clone(),
     };
     let output_path = spec.path().to_path_buf();
 
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
+    rt_handle.block_on(async {
         let packer = StreamingPacker::new(vec![meta], spec, None);
         packer
             .notify_layer_ready(0, layer.blob_path.clone())
@@ -570,7 +576,13 @@ mod tests {
 
         let out_dir = tempfile::tempdir().unwrap();
         let dest = out_dir.path().join("rootfs");
-        export_ocirender(&[layer], ImageSpec::Dir { path: dest.clone() }).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        export_ocirender(
+            &[layer],
+            ImageSpec::Dir { path: dest.clone() },
+            rt.handle().clone(),
+        )
+        .unwrap();
 
         assert_eq!(std::fs::read(dest.join("usr/bin/hello")).unwrap(), b"hi\n");
 
@@ -588,7 +600,13 @@ mod tests {
 
         let out_dir = tempfile::tempdir().unwrap();
         let dest = out_dir.path().join("rootfs");
-        export_ocirender_single(&layer, ImageSpec::Dir { path: dest.clone() }).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        export_ocirender_single(
+            &layer,
+            ImageSpec::Dir { path: dest.clone() },
+            rt.handle().clone(),
+        )
+        .unwrap();
 
         assert_eq!(std::fs::read(dest.join("etc/motd")).unwrap(), b"welcome\n");
 

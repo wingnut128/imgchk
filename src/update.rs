@@ -138,14 +138,16 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
                     _ => {
                         let name = format!("layer-{}", layer.index);
                         let spec = extract::make_image_spec(fmt, &dir, &name);
-                        extract::export_ocirender_single(layer, spec).map(|path| {
-                            format!(
-                                "Exported layer {} as {} to {}",
-                                layer.index,
-                                fmt.label(),
-                                path.display()
-                            )
-                        })
+                        extract::export_ocirender_single(layer, spec, app.rt_handle.clone()).map(
+                            |path| {
+                                format!(
+                                    "Exported layer {} as {} to {}",
+                                    layer.index,
+                                    fmt.label(),
+                                    path.display()
+                                )
+                            },
+                        )
                     }
                 };
                 app.output.status = match result {
@@ -169,13 +171,14 @@ pub fn update(app: &mut App, action: Action) -> ControlFlow<()> {
                     }
                     _ => {
                         let spec = extract::make_image_spec(fmt, &dir, "image");
-                        extract::export_ocirender(&app.image.layers, spec).map(|path| {
-                            format!(
-                                "Exported all layers as {} to {}",
-                                fmt.label(),
-                                path.display()
-                            )
-                        })
+                        extract::export_ocirender(&app.image.layers, spec, app.rt_handle.clone())
+                            .map(|path| {
+                                format!(
+                                    "Exported all layers as {} to {}",
+                                    fmt.label(),
+                                    path.display()
+                                )
+                            })
                     }
                 };
                 app.output.status = match result {
@@ -294,7 +297,8 @@ mod tests {
             layers,
             history: Vec::new(),
         };
-        App::new(image, None)
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        App::new(image, None, rt.handle().clone())
     }
 
     fn single_empty_layer_app() -> App {

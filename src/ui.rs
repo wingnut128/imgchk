@@ -203,10 +203,15 @@ pub struct App {
     pub selection: Selection,
     pub output: OutputState,
     pub modal: ModalState,
+    pub rt_handle: tokio::runtime::Handle,
 }
 
 impl App {
-    pub fn new(image: ImageInfo, output_dir: Option<PathBuf>) -> Self {
+    pub fn new(
+        image: ImageInfo,
+        output_dir: Option<PathBuf>,
+        rt_handle: tokio::runtime::Handle,
+    ) -> Self {
         let mut app = App {
             image,
             focus: Pane::Layers,
@@ -214,6 +219,7 @@ impl App {
             selection: Selection::new(),
             output: OutputState::new(output_dir),
             modal: ModalState::new(),
+            rt_handle,
         };
         app.rebuild_file_rows();
         app
@@ -255,12 +261,16 @@ fn flatten_node(
     }
 }
 
-pub fn run(image: ImageInfo, output_dir: Option<PathBuf>) -> anyhow::Result<()> {
+pub fn run(
+    image: ImageInfo,
+    output_dir: Option<PathBuf>,
+    rt_handle: tokio::runtime::Handle,
+) -> anyhow::Result<()> {
     let mut guard = TerminalGuard::new()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(image, output_dir);
+    let mut app = App::new(image, output_dir, rt_handle);
 
     loop {
         terminal.draw(|f| view::draw(f, &app))?;
