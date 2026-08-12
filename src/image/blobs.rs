@@ -201,13 +201,17 @@ fn collect_cache_entries(cache_dir: &Path) -> Option<Vec<CacheEntry>> {
 }
 
 /// Bump a cache file's access time so LRU eviction sees it as recent.
+/// Sets the access time explicitly using filetime, which works reliably across
+/// different mount options (relatime, noatime, etc.). Best-effort: silently
+/// ignores I/O errors.
 fn touch(path: &Path) {
-    let _ = std::fs::File::open(path);
+    let _ = filetime::set_file_atime(path, filetime::FileTime::now());
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     struct TempStore {
         _dir: tempfile::TempDir,
@@ -300,5 +304,40 @@ mod tests {
         let t = temp_store();
         // Empty dir — total is 0, well under any limit.
         let _ = t.store.ensure_capacity(1024);
+    }
+
+    #[test]
+    fn touch_updates_access_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test_file");
+
+        // Create the file with some content
+        std::fs::write(&file_path, b"test").unwrap();
+
+        // Set atime to a time clearly in the past (1 hour ago).
+        let past = filetime::FileTime::from_system_time(
+            SystemTime::now()
+                .checked_sub(std::time::Duration::from_secs(3600))
+                .unwrap(),
+        );
+        filetime::set_file_atime(&file_path, past).unwrap();
+
+        // Record the past atime for comparison.
+        let atime_before = std::fs::metadata(&file_path).unwrap().accessed().unwrap();
+
+        // Brief pause to ensure time advances (some filesystems have coarse granularity).
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Call touch() to update the atime.
+        touch(&file_path);
+
+        // Verify that atime moved forward.
+        let atime_after = std::fs::metadata(&file_path).unwrap().accessed().unwrap();
+        assert!(
+            atime_after > atime_before,
+            "touch() must advance atime: before={:?}, after={:?}",
+            atime_before,
+            atime_after
+        );
     }
 }

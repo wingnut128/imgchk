@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full"] }
 oci-client = "0.17"
 ocirender = "0.2"
 indicatif = "0.18"
+filetime = "0.2"
 
 [dev-dependencies]
 oci-spec = "0.9"
