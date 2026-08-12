@@ -169,6 +169,7 @@ mod tests {
             os: "linux".to_string(),
             source: "nginx:latest".to_string(),
             history: Vec::new(),
+            blob_dir: None,
         };
 
         let report = build_report(&image);
@@ -194,6 +195,7 @@ mod tests {
             os: "linux".to_string(),
             source: "alpine:3.19".to_string(),
             history: Vec::new(),
+            blob_dir: None,
         };
 
         let json = serde_json::to_string(&build_report(&image)).unwrap();
@@ -431,6 +433,7 @@ mod tests {
                     created: "t1".into(),
                 },
             ],
+            blob_dir: None,
         };
         let report = build_report(&image);
         assert_eq!(report.history.len(), 2);

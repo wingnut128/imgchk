@@ -15,6 +15,7 @@ pub use registry::RegistrySource;
 pub use tarball::TarballSource;
 
 pub const MEDIA_TYPE_LAYER_GZIP: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+pub const MEDIA_TYPE_LAYER_TAR: &str = "application/vnd.docker.image.rootfs.diff.tar";
 
 /// Pre-parsed metadata for a single layer.
 pub struct LayerInfo {
@@ -37,6 +38,19 @@ pub struct ImageInfo {
     pub os: String,
     pub source: String,
     pub history: Vec<HistoryStep>,
+    /// Owns the staging directory holding the layer blobs that `LayerInfo::blob_path`
+    /// points into, when they had to be materialized to disk (registry pulls and
+    /// `docker save` archives). Dropping the `ImageInfo` removes them, so the blobs
+    /// live exactly as long as something can still ask to extract from them.
+    ///
+    /// `None` when blobs are read straight from a file the user already has on disk
+    /// (single-layer tarballs), since there is nothing of ours to clean up.
+    ///
+    /// Not to be confused with the *output* directory in `ui::OutputState`, which is
+    /// deliberately leaked — it holds the user's extracted files and must outlive us.
+    // Held only for its Drop side effect — never read.
+    #[allow(dead_code)]
+    pub blob_dir: Option<tempfile::TempDir>,
 }
 
 /// A source that can produce an [`ImageInfo`] from a string reference

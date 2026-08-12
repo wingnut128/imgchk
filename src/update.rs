@@ -273,6 +273,7 @@ mod tests {
             total_size: layers.iter().map(|l| l.size).sum(),
             layers,
             history: Vec::new(),
+            blob_dir: None,
         };
         App::new(image, None)
     }
