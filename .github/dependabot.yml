@@ -13,3 +13,20 @@ updates:
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # oci-spec must move in lockstep with oci-client, never on its own.
+      # oci-client types `manifest::Platform` fields as oci_spec::image::Arch /
+      # Os from its OWN oci-spec, and re-exports only distribution::{ParseError,
+      # Reference} — so the test in src/image/registry.rs can reach Arch/Os only
+      # via a direct dev-dependency, which must therefore match oci-client's
+      # internal pin exactly. Bumping it alone puts two incompatible oci-spec
+      # versions in the graph and fails to compile (see #123).
+      #
+      # For 0.x crates Dependabot labels 0.9 -> 0.10 as semver-MINOR even though
+      # Cargo treats it as breaking, so minor is ignored here alongside major.
+      # Patch bumps (0.9.0 -> 0.9.1) stay allowed: those are compatible.
+      # Remove this entry once oci-client itself moves to oci-spec 0.10+.
+      - dependency-name: oci-spec
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor

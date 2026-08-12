@@ -20,4 +20,11 @@ ocirender = "0.2"
 indicatif = "0.18"
 
 [dev-dependencies]
+# Pinned to whatever oci-client depends on internally, NOT to the latest
+# release. Tests build `oci_client::manifest::Platform`, whose fields are typed
+# as oci_spec::image::{Arch, Os}; oci-client re-exports only
+# oci_spec::distribution::{ParseError, Reference}, so those types are reachable
+# only through this direct dependency. A mismatch puts two incompatible
+# oci-spec versions in the graph and fails to compile. Bump only together with
+# oci-client. Dependabot is configured to skip it (see .github/dependabot.yml).
 oci-spec = "0.9"
