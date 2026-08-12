@@ -20,4 +20,4 @@ ocirender = "0.2"
 indicatif = "0.18"
 
 [dev-dependencies]
-oci-spec = "0.9"
+oci-spec = "0.10"
