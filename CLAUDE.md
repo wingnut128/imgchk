@@ -4,7 +4,7 @@ Container image inspector and layer extraction tool.
 
 ## Project Overview
 
-imgchk fetches OCI/Docker container images, displays layer metadata in an interactive TUI, and extracts layers to disk in multiple formats.
+imgchk fetches OCI/Docker container images, displays layer metadata in an interactive TUI, and extracts layers to disk in multiple formats. Optionally, you can scan the images with Vulnerability tools.
 
 ## Architecture
 
