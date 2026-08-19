@@ -7,14 +7,27 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: release-plz-${{ github.ref }}
-  cancel-in-progress: false
+# Concurrency is per-JOB, not workflow-wide, because the two jobs want
+# opposite behaviour under a burst of pushes to main:
+#
+#   - release  publishes to crates.io and pushes tags. It must never be
+#     cancelled mid-flight, so it keeps cancel-in-progress: false.
+#   - release-pr only regenerates the pending release PR from whatever main
+#     currently is. Queueing those is pointless — an older run creates a ref
+#     from a stale SHA and the newer run supersedes it anyway — so it
+#     cancels in progress and only the newest run survives.
+#
+# A single workflow-level group meant a burst of dependabot auto-merges left
+# release runs queued behind release-pr runs, and GitHub cancelled a queued
+# run outright (only one run may be pending per group).
 
 jobs:
   release-plz-release:
     name: release-plz release
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -30,7 +43,22 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
+      # Two attempts, see the note on the release-pr job below.
       - name: Run release-plz
+        id: release
+        continue-on-error: true
+        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Back off before retry
+        if: steps.release.outcome == 'failure'
+        run: sleep 60
+
+      - name: Run release-plz (retry)
+        if: steps.release.outcome == 'failure'
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
@@ -40,6 +68,9 @@ jobs:
   release-plz-pr:
     name: release-plz PR
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       contents: write
       pull-requests: write
@@ -56,7 +87,41 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
+      # Run twice rather than once, because a single transient GitHub API
+      # rejection here leaves a red X on main for a release PR that is
+      # otherwise fine. Observed on 2026-08-19: two consecutive runs died on
+      #
+      #   ERROR failed to create ref refs/heads/release-plz-<ts> with sha <sha>
+      #     0: {"message": "Resource not accessible by personal access token",
+      #         "status": "403"}
+      #     1: HTTP status client error (403 Forbidden) for url
+      #        (https://api.github.com/repos/wingnut128/imgchk/git/refs)
+      #
+      # while the very next run created the ref and opened PR #140 with the
+      # SAME token — so this is not a missing PAT scope, it is a transient
+      # rejection during a burst of PAT-authenticated writes (four dependabot
+      # auto-merges inside three minutes). Both release-plz commands are
+      # idempotent: `release-pr` regenerates the pending PR and `release`
+      # skips versions already on crates.io, so re-running is safe.
+      #
+      # If this ever fails BOTH attempts, check the PAT before assuming a
+      # flake: RELEASE_PLZ_TOKEN needs Contents + Pull-requests: write on this
+      # repository and must not have expired.
       - name: Run release-plz
+        id: release_pr
+        continue-on-error: true
+        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Back off before retry
+        if: steps.release_pr.outcome == 'failure'
+        run: sleep 60
+
+      - name: Run release-plz (retry)
+        if: steps.release_pr.outcome == 'failure'
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release-pr

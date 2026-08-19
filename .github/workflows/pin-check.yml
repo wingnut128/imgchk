@@ -1,5 +1,6 @@
 # ===================================================================
-# Pin Check — fails PRs that introduce tag-pinned GitHub Actions.
+# Pin Check — fails PRs that introduce tag-pinned GitHub Actions, or
+# that pin two entry points of the SAME action to different SHAs.
 #
 # Defense-in-depth against action-tag force-push attacks
 # (e.g., aquasecurity/trivy-action, March 2026).
@@ -42,3 +43,32 @@ jobs:
             exit 1
           fi
           echo "All actions SHA-pinned."
+
+      - name: Verify each action is pinned to a single SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Multi-entry-point actions must move in lockstep. github/codeql-action
+          # ships init/ and analyze/ as separate Dependabot dependencies, and
+          # analyze aborts when it reads a config written by a different version
+          # ("Loaded a configuration file for version X, but running version Y").
+          # A split bump therefore reds out CodeQL on main and on every open PR
+          # until the second half merges. .github/dependabot.yml groups those
+          # bumps so they land together; this check enforces the same invariant
+          # on the merged tree, for hand-edits and for any future action that
+          # exposes more than one entry point.
+          #
+          # Key on the action REPOSITORY (owner/repo), ignoring any sub-path,
+          # and fail if one repository appears with more than one SHA.
+          mismatches=$(grep -rhoE '^\s*-?\s*uses:\s*[^./@[:space:]][^@[:space:]]*@[0-9a-f]{40}' .github/ \
+            | sed -E 's/^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*//' \
+            | awk -F@ '{ split($1, p, "/"); print p[1] "/" p[2] " " $2 }' \
+            | sort -u \
+            | awk '{ count[$1]++; shas[$1] = shas[$1] " " $2 }
+                   END { for (a in count) if (count[a] > 1) print a ":" shas[a] }')
+          if [ -n "$mismatches" ]; then
+            echo "::error::Each action must be pinned to ONE SHA across all workflows:"
+            echo "$mismatches"
+            exit 1
+          fi
+          echo "Every action pinned to a single SHA."

@@ -4,6 +4,27 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      # github/codeql-action/init and .../analyze MUST move in lockstep.
+      # analyze refuses to run against a config written by a different
+      # version of init ("Loaded a configuration file for version '4.37.7',
+      # but running version '4.37.6'"), so splitting the bump across two PRs
+      # breaks CodeQL on main AND on every open PR for the whole window
+      # between the two merges (see ENG failed-runs triage, 2026-08-19).
+      # Grouped across ALL update types, majors included, for that reason.
+      # .github/workflows/pin-check.yml enforces the same invariant on the
+      # merged tree, so a hand-edit can't reintroduce the skew either.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      # Everything else lands as ONE PR per week rather than one PR per
+      # action. Beyond the review churn, a burst of individually
+      # auto-merged bumps means a burst of pushes to main, and each push
+      # fires its own Release-plz run — which is how four runs ended up
+      # racing on the same release PR. Majors stay ungrouped so they get an
+      # individual PR and are never auto-merged (see automerge.yml).
+      github-actions:
+        update-types: [minor, patch]
 
   - package-ecosystem: cargo
     directory: /
