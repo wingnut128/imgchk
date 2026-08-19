@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.16](https://github.com/wingnut128/imgchk/compare/v0.4.15...v0.4.16) - 2026-08-19
+
+### Other
+
+- *(deps)* bump taiki-e/install-action from 2.85.11 to 2.86.1 ([#139](https://github.com/wingnut128/imgchk/pull/139))
+- *(deps)* bump github/codeql-action/analyze from 4.37.6 to 4.37.7 ([#138](https://github.com/wingnut128/imgchk/pull/138))
+- *(deps)* bump step-security/harden-runner from 2.20.1 to 2.21.0 ([#136](https://github.com/wingnut128/imgchk/pull/136))
+- *(deps)* bump github/codeql-action/init from 4.37.6 to 4.37.7 ([#137](https://github.com/wingnut128/imgchk/pull/137))
+
 ## [0.4.15](https://github.com/wingnut128/imgchk/compare/v0.4.14...v0.4.15) - 2026-08-12
 
 ### Other
