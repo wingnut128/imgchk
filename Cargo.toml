@@ -1,6 +1,6 @@
 [package]
 name = "imgchk"
-version = "0.4.16"
+version = "0.4.17"
 edition = "2024"
 description = "Container image inspector and layer extraction tool"
 
