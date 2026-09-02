@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.17](https://github.com/wingnut128/imgchk/compare/v0.4.16...v0.4.17) - 2026-09-02
+
+### Other
+
+- *(deps)* bump the github-actions group with 5 updates ([#145](https://github.com/wingnut128/imgchk/pull/145))
+- *(deps)* bump flate2 in the cargo-minor-and-patch group ([#144](https://github.com/wingnut128/imgchk/pull/144))
+- *(deps)* bump the github-actions group with 3 updates ([#142](https://github.com/wingnut128/imgchk/pull/142))
+
 ## [0.4.16](https://github.com/wingnut128/imgchk/compare/v0.4.15...v0.4.16) - 2026-08-19
 
 ### Other
