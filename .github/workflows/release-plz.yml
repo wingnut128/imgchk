@@ -47,7 +47,7 @@ jobs:
       - name: Run release-plz
         id: release
         continue-on-error: true
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
         with:
           command: release
         env:
@@ -59,7 +59,7 @@ jobs:
 
       - name: Run release-plz (retry)
         if: steps.release.outcome == 'failure'
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
         with:
           command: release
         env:
@@ -110,7 +110,7 @@ jobs:
       - name: Run release-plz
         id: release_pr
         continue-on-error: true
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
         with:
           command: release-pr
         env:
@@ -122,7 +122,7 @@ jobs:
 
       - name: Run release-plz (retry)
         if: steps.release_pr.outcome == 'failure'
-        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
+        uses: release-plz/action@aec534bbd8631793b9b3b8f1ee6cd886c322e17f # v0.5.133
         with:
           command: release-pr
         env:
