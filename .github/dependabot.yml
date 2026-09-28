@@ -46,7 +46,10 @@ updates:
       # For 0.x crates Dependabot labels 0.9 -> 0.10 as semver-MINOR even though
       # Cargo treats it as breaking, so minor is ignored here alongside major.
       # Patch bumps (0.9.0 -> 0.9.1) stay allowed: those are compatible.
-      # Remove this entry once oci-client itself moves to oci-spec 0.10+.
+      # Keep this entry permanently: the invariant outlives any one version.
+      # When a Dependabot oci-client bump fails to compile on oci-spec types,
+      # bump the oci-spec dev-dependency in the same PR (as done for
+      # oci-client 0.17 -> 0.18 / oci-spec 0.9 -> 0.10).
       - dependency-name: oci-spec
         update-types:
           - version-update:semver-major
