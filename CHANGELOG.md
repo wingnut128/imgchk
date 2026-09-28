@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.17](https://github.com/wingnut128/imgchk/compare/v0.4.16...v0.4.17) - 2026-09-28
+
+### Fixed
+
+- *(deps)* bump oci-client to 0.18 with oci-spec 0.10, rustls to 0.23.45 ([#150](https://github.com/wingnut128/imgchk/pull/150))
+
+### Other
+
+- *(deps)* bump the github-actions group across 1 directory with 5 updates ([#151](https://github.com/wingnut128/imgchk/pull/151))
+- *(deps)* bump clap ([#148](https://github.com/wingnut128/imgchk/pull/148))
+- *(deps)* bump the github-actions group with 2 updates ([#146](https://github.com/wingnut128/imgchk/pull/146))
+- *(deps)* bump the github-actions group with 5 updates ([#145](https://github.com/wingnut128/imgchk/pull/145))
+- *(deps)* bump flate2 in the cargo-minor-and-patch group ([#144](https://github.com/wingnut128/imgchk/pull/144))
+- *(deps)* bump the github-actions group with 3 updates ([#142](https://github.com/wingnut128/imgchk/pull/142))
+
 ## [0.4.16](https://github.com/wingnut128/imgchk/compare/v0.4.15...v0.4.16) - 2026-08-19
 
 ### Other
