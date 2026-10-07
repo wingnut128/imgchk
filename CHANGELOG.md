@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.18](https://github.com/wingnut128/imgchk/compare/v0.4.17...v0.4.18) - 2026-10-07
+
+### Other
+
+- *(deps)* bump the github-actions group with 2 updates ([#155](https://github.com/wingnut128/imgchk/pull/155))
+- *(deps)* bump tokio ([#154](https://github.com/wingnut128/imgchk/pull/154))
+- *(deps)* bump taiki-e/install-action in the github-actions group ([#152](https://github.com/wingnut128/imgchk/pull/152))
+
 ## [0.4.17](https://github.com/wingnut128/imgchk/compare/v0.4.16...v0.4.17) - 2026-09-28
 
 ### Fixed
