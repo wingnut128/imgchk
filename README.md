@@ -58,6 +58,7 @@ Or build locally:
 just build          # debug build
 just release        # optimized release build
 just hooks          # install pre-commit hook (fmt + clippy)
+just deny           # dependency checks: cargo audit + cargo deny (needs both installed)
 ```
 
 Run `just` (or `just --list`) to see all available recipes.
