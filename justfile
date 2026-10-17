@@ -29,6 +29,11 @@ fmt:
 lint:
     cargo clippy -- -D warnings
 
+# Check dependencies: advisories (cargo audit) + license/ban/source policy (deny.toml)
+deny:
+    cargo audit
+    cargo deny check
+
 # Install to ~/.cargo/bin
 install:
     cargo install --path .

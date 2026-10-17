@@ -35,6 +35,7 @@ jobs:
               - "tests/**"
               - "Cargo.toml"
               - "Cargo.lock"
+              - "deny.toml"
               - ".github/workflows/ci.yml"
 
   # The conditional jobs below use step-level `if:` rather than job-level
@@ -129,9 +130,12 @@ jobs:
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         if: needs.changes.outputs.code == 'true'
         with:
-          tool: cargo-audit
+          tool: cargo-audit,cargo-deny
       - if: needs.changes.outputs.code == 'true'
         run: cargo audit
+      - name: cargo deny (licenses, bans, sources, advisories)
+        if: needs.changes.outputs.code == 'true'
+        run: cargo deny check
 
   build:
     name: Build (${{ matrix.target }})

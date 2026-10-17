@@ -1,0 +1,50 @@
+# cargo-deny configuration. Run locally with `just deny` (or `cargo deny check`);
+# CI runs it in the "Dependency Policy" job of ci.yml.
+#
+# `cargo audit` (Security Audit job) remains the advisory gate; the
+# advisories section here mirrors it so `cargo deny check` is a complete
+# local pre-flight.
+
+[graph]
+all-features = true
+
+[advisories]
+# Yanked crates fail the check rather than warn — a yanked transitive dep
+# (e.g. chacha20 0.10.1) should get bumped, not shipped.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# Permissive licenses compatible with distributing an Apache-2.0 binary.
+# Add to this list deliberately — anything copyleft (GPL/LGPL/MPL) should
+# only be accepted via an OR alternative, which cargo-deny resolves
+# automatically (e.g. `MIT OR MPL-2.0` passes on MIT).
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "bzip2-1.0.6",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+# Duplicate versions are common transitively (e.g. two `windows-sys`);
+# surface them without failing the build.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

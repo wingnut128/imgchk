@@ -68,7 +68,10 @@ cargo run -- <image-ref>
 
 ```sh
 just test    # or: cargo test
+just deny    # cargo audit + cargo deny check
 ```
+
+Dependency policy lives in `deny.toml` (license allowlist, crates.io-only sources, yanked crates denied, duplicate versions warn). CI's **Security Audit** job runs both `cargo audit` and `cargo deny check`. Adding a dependency with a license outside the allowlist fails CI — extend the list deliberately rather than loosening it.
 
 ## Design Decisions
 
