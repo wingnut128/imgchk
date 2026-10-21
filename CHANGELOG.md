@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.20](https://github.com/wingnut128/imgchk/compare/v0.4.19...v0.4.20) - 2026-10-21
+
+### Other
+
+- *(deps)* bump the github-actions group across 1 directory with 4 updates ([#164](https://github.com/wingnut128/imgchk/pull/164))
+
 ## [0.4.19](https://github.com/wingnut128/imgchk/compare/v0.4.18...v0.4.19) - 2026-10-17
 
 ### Other
